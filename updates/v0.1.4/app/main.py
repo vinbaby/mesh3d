@@ -518,7 +518,6 @@ class StudioWindow(QMainWindow):
 
         if len(largest_component) < max(25, int(total * 0.01)) or len(largest_component) > int(total * 0.92):
             self.viewport.set_auto_edges([])
-            self.update_frame_stats(0, 0)
             if not silent:
                 QMessageBox.information(
                     self, "Could not isolate an object",
@@ -588,12 +587,14 @@ class StudioWindow(QMainWindow):
         ordered_ids = sorted(edge_ids)
         auto_edges = [(node_points[a], node_points[b]) for a, b in ordered_ids]
         if len(auto_edges) < 20:
+            self.viewport.set_auto_edges([])
             if not silent:
                 QMessageBox.information(
                     self, "Frame too small",
                     "The object was detected, but not enough frame edges were found. "
                     "Try a larger reference image or use manual drawing."
                 )
+            self.mode_value.setText("Detection needs a clearer silhouette")
             self.statusBar().showMessage("Frame detection produced too few edges")
             return
 
