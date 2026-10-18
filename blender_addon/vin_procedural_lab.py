@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 5, 0),
+    "version": (0, 6, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -1086,7 +1086,7 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
     target_collection.objects.link(obj)
 
     rng = random.Random(seed ^ 0x5A17)
-    object_family = next((family for family in ("Cyber Module", "Folded Ribbon", "Prism Reactor", "Faceted Totem") if family in name), None)
+    object_family = next((family for family in ("Cyber Module", "Folded Ribbon", "Prism Reactor", "Faceted Totem", "Hex Armor", "Circuit Core", "Orbital Particle", "Cellular Void", "Spike Bloom") if family in name), None)
     if object_family:
         palettes = {
             "Cyber Module": [
@@ -1118,6 +1118,40 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
                 ("Teal", (0.02,0.30,0.33), 0.54, 0.24, None, 0.0),
                 ("Soft silver", (0.75,0.80,0.86), 0.68, 0.20, None, 0.0),
             ],
+            "Hex Armor": [
+                ("Deep black ceramic", (0.006,0.012,0.022), 0.78, 0.24, None, 0.0),
+                ("Graphite titanium", (0.045,0.060,0.080), 0.88, 0.19, None, 0.0),
+                ("Bright machined edge", (0.36,0.43,0.52), 0.90, 0.16, None, 0.0),
+                ("Ice blue seam", (0.008,0.30,0.82), 0.45, 0.18, (0.0,0.18,1.0), 1.5),
+                ("Warm metal accent", (0.96,0.24,0.035), 0.52, 0.19, (1.0,0.09,0.01), 1.8),
+            ],
+            "Circuit Core": [
+                ("Circuit substrate", (0.008,0.018,0.032), 0.75, 0.28, None, 0.0),
+                ("Dark machined steel", (0.065,0.085,0.11), 0.84, 0.22, None, 0.0),
+                ("Silver traces", (0.38,0.48,0.59), 0.86, 0.18, None, 0.0),
+                ("Ion blue trace", (0.006,0.32,0.95), 0.30, 0.17, (0.0,0.23,1.0), 3.0),
+                ("Amber signal", (1.0,0.24,0.025), 0.30, 0.18, (1.0,0.10,0.0), 3.0),
+            ],
+            "Orbital Particle": [
+                ("Obsidian chrome", (0.012,0.016,0.025), 0.88, 0.12, None, 0.0),
+                ("Silver pearl", (0.70,0.76,0.83), 0.72, 0.12, None, 0.0),
+                ("Champagne gold", (0.70,0.37,0.12), 0.82, 0.16, None, 0.0),
+                ("Cool blue pin light", (0.02,0.28,0.78), 0.32, 0.16, (0.0,0.22,1.0), 2.2),
+                ("Amber pin light", (0.95,0.38,0.08), 0.35, 0.16, (1.0,0.20,0.02), 2.0),
+            ],
+            "Cellular Void": [
+                ("Void black", (0.006,0.010,0.016), 0.58, 0.27, None, 0.0),
+                ("Graphite shell", (0.035,0.045,0.055), 0.72, 0.21, None, 0.0),
+                ("Subsurface ember", (0.42,0.055,0.018), 0.32, 0.22, (0.85,0.045,0.008), 1.5),
+                ("Hot core", (0.90,0.18,0.025), 0.22, 0.19, (1.0,0.08,0.01), 3.2),
+            ],
+            "Spike Bloom": [
+                ("Black ceramic", (0.006,0.010,0.018), 0.76, 0.18, None, 0.0),
+                ("Gunmetal spikes", (0.10,0.12,0.15), 0.90, 0.17, None, 0.0),
+                ("Copper port", (0.40,0.14,0.05), 0.78, 0.17, None, 0.0),
+                ("Amber plasma", (1.0,0.12,0.012), 0.26, 0.17, (1.0,0.045,0.0), 3.4),
+                ("Blue micro light", (0.015,0.20,0.82), 0.30, 0.16, (0.0,0.08,1.0), 2.8),
+            ],
         }
         palette = palettes[object_family]
         for label, color, metallic, roughness, emission, strength in palette:
@@ -1128,6 +1162,11 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             "Folded Ribbon": [3,5,2,2,1],
             "Prism Reactor": [4,3,2,2],
             "Faceted Totem": [2,3,2,2,2,3],
+            "Hex Armor": [5,5,3,1,1],
+            "Circuit Core": [6,4,4,2,1],
+            "Orbital Particle": [5,4,2,1,1],
+            "Cellular Void": [8,3,1,1],
+            "Spike Bloom": [6,4,2,1,1],
         }
         weights = weight_map[object_family]
         for index, polygon in enumerate(mesh.polygons):
@@ -1138,9 +1177,12 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             for polygon_index in face_material_overrides.get("dark_faces", []):
                 if 0 <= polygon_index < len(mesh.polygons):
                     mesh.polygons[polygon_index].material_index = 0
+            for polygon_index, material_index in face_material_overrides.get("face_material_indices", []):
+                if 0 <= polygon_index < len(mesh.polygons):
+                    mesh.polygons[polygon_index].material_index = max(0, min(material_index, len(palette)-1))
         obj.color = palette[1][1] + (1.0,)
         for polygon in mesh.polygons:
-            polygon.use_smooth = object_family in ("Folded Ribbon", "Prism Reactor")
+            polygon.use_smooth = object_family in ("Folded Ribbon", "Prism Reactor", "Orbital Particle", "Cellular Void", "Spike Bloom")
         if hasattr(mesh, "use_auto_smooth"):
             mesh.use_auto_smooth = True
         bevel = obj.modifiers.new("Micro bevels", "BEVEL")
@@ -1154,6 +1196,11 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
                 "Folded Ribbon": 0.012,
                 "Prism Reactor": 0.012,
                 "Faceted Totem": 0.016,
+                "Hex Armor": 0.014,
+                "Circuit Core": 0.010,
+                "Orbital Particle": 0.004,
+                "Cellular Void": 0.003,
+                "Spike Bloom": 0.005,
             }.get(object_family, 0.010)
             bevel.width = max(0.003, min(max_extent*family_factor, min_extent*0.12))
             bevel.segments = 3
@@ -1579,7 +1626,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.5.0"
+    tree["vinlab_version"] = "0.6.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -1664,7 +1711,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
 
         obj["vinlab_shape_type"] = shape_type
         obj["vinlab_seed"] = settings.seed
-        obj["vinlab_version"] = "0.5.0"
+        obj["vinlab_version"] = "0.6.0"
         self.report(
             {"INFO"},
             f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
@@ -1691,7 +1738,7 @@ class VINLAB_OT_generate_scifi_scene(bpy.types.Operator):
             self.report({"ERROR"}, f"Sci-Fi scene generation failed: {exc}")
             return {"CANCELLED"}
         hero["vinlab_scifi_scene_seed"] = settings.seed
-        hero["vinlab_version"] = "0.5.0"
+        hero["vinlab_version"] = "0.6.0"
         self.report({"INFO"}, f"Generated sci-fi scene with {len(collection.objects)} objects · Seed {settings.seed}")
         return {"FINISHED"}
 
