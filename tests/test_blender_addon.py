@@ -25,9 +25,18 @@ def test_procedural_shape_generators_are_present() -> None:
         "_build_crystal_cluster",
         "_build_branching_form",
         "_build_future_sculpture",
+        "_build_cyber_module",
+        "_build_folded_ribbon",
+        "_build_prism_reactor",
+        "_build_faceted_totem",
     ):
         assert f"def {builder}" in source
     assert "class VINLAB_OT_generate_shape" in source
+    assert "Random Object" in source
+    assert "Cyber Module" in source
+    assert "Folded Ribbon" in source
+    assert "Prism Reactor" in source
+    assert "Faceted Totem" in source
     assert "random.Random(settings.seed)" in source
 
 
