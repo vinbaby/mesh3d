@@ -32,6 +32,10 @@ def main() -> None:
         "CRYSTAL_CLUSTER",
         "BRANCHING_FORM",
         "FUTURE_SCULPTURE",
+        "CYBER_MODULE",
+        "FOLDED_RIBBON",
+        "PRISM_REACTOR",
+        "FACETED_TOTEM",
     )
     for shape_type in shape_types:
         settings.shape_type = shape_type
