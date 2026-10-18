@@ -1766,16 +1766,14 @@ def _build_field_scatter_group(settings):
     ramp.location = (-370, -160)
     ramp.label = "Editable influence Color Ramp"
     ramp.color_ramp.elements[0].position = 0.38
-    ramp.color_ramp.elements[0].color = (0.015, 0.015, 0.02, 1.0)
+    ramp.color_ramp.elements[0].color = (0.015, 0.015, 0.02, 0.0)
     ramp.color_ramp.elements[1].position = 0.64
     ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
     links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
 
-    rgb_to_bw = nodes.new("ShaderNodeRGBToBW")
-    rgb_to_bw.location = (-110, -170)
-    links.new(ramp.outputs["Color"], rgb_to_bw.inputs["Color"])
-    compare = _math_node(nodes, "GREATER_THAN", "Mask threshold selects affected points", (130, -130))
-    links.new(rgb_to_bw.outputs["Val"], compare.inputs[0])
+    # Alpha is a scalar 0–1 field, so it can drive the mask without an unsupported RGB-to-BW node.
+    compare = _math_node(nodes, "GREATER_THAN", "Mask threshold selects affected points", (-40, -130))
+    links.new(ramp.outputs["Alpha"], compare.inputs[0])
     links.new(group_in.outputs["Mask Threshold"], compare.inputs[1])
 
     sine = _math_node(nodes, "SINE", "Oscillating field motion", (-620, -540))
