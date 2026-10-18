@@ -311,7 +311,8 @@ def _new_mesh_object(context, name, vertices, faces, seed):
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
     obj = bpy.data.objects.new(name, mesh)
-    context.collection.objects.link(obj)
+    target_collection = context.collection or context.scene.collection
+    target_collection.objects.link(obj)
 
     rng = random.Random(seed ^ 0x5A17)
     material = bpy.data.materials.new(name=f"VINLAB · {name}")
