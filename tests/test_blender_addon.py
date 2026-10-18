@@ -29,6 +29,11 @@ def test_procedural_shape_generators_are_present() -> None:
         "_build_folded_ribbon",
         "_build_prism_reactor",
         "_build_faceted_totem",
+        "_build_hex_armor",
+        "_build_circuit_core",
+        "_build_orbital_particle",
+        "_build_cellular_void",
+        "_build_spike_bloom",
     ):
         assert f"def {builder}" in source
     assert "class VINLAB_OT_generate_shape" in source
@@ -37,6 +42,13 @@ def test_procedural_shape_generators_are_present() -> None:
     assert "Folded Ribbon" in source
     assert "Prism Reactor" in source
     assert "Faceted Totem" in source
+    assert "Hex Armor" in source
+    assert "Circuit Core" in source
+    assert "Orbital Particle" in source
+    assert "Cellular Void" in source
+    assert "Spike Bloom" in source
+    assert "def _append_hex_tile" in source
+    assert "def _append_uv_sphere" in source
     assert "random.Random(settings.seed)" in source
 
 
