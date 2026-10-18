@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 6, 0),
+    "version": (0, 7, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -17,6 +17,7 @@ from bpy.props import (
     IntProperty,
     FloatProperty,
     BoolProperty,
+    PointerProperty,
 )
 
 
@@ -1231,6 +1232,70 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
     return obj
 
 
+def _separate_loose_parts(context, obj):
+    """Turn disconnected mesh islands into separately selectable Blender objects."""
+    if obj is None or obj.type != "MESH":
+        return [obj] if obj is not None else []
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    context.view_layer.objects.active = obj
+    if obj.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="LOOSE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    parts = [item for item in context.selected_objects if item.type == "MESH"]
+    if not parts:
+        parts = [obj]
+    if len(parts) > 1:
+        context.view_layer.objects.active = obj if obj in parts else parts[0]
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+        # The bevel based on the assembly's overall bounds is too large for tiny loose parts.
+        for part in parts:
+            dims = [float(value) for value in part.dimensions]
+            positive = [value for value in dims if value > 1e-6]
+            if not positive:
+                continue
+            min_extent, max_extent = min(positive), max(positive)
+            for modifier in part.modifiers:
+                if modifier.type == "BEVEL":
+                    modifier.width = max(0.001, min(max_extent * 0.018, min_extent * 0.12))
+    return parts
+
+
+def _separate_loose_parts(context, obj):
+    """Turn disconnected mesh islands into separately selectable Blender objects."""
+    if obj is None or obj.type != "MESH":
+        return [obj] if obj is not None else []
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    context.view_layer.objects.active = obj
+    if obj.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="LOOSE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    parts = [item for item in context.selected_objects if item.type == "MESH"]
+    if not parts:
+        parts = [obj]
+    if len(parts) > 1:
+        context.view_layer.objects.active = obj if obj in parts else parts[0]
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+        # The bevel based on the assembly's overall bounds is too large for tiny loose parts.
+        for part in parts:
+            dims = [float(value) for value in part.dimensions]
+            positive = [value for value in dims if value > 1e-6]
+            if not positive:
+                continue
+            min_extent, max_extent = min(positive), max(positive)
+            for modifier in part.modifiers:
+                if modifier.type == "BEVEL":
+                    modifier.width = max(0.001, min(max_extent * 0.018, min_extent * 0.12))
+    return parts
+
+
 def _scene_material(name, color, metallic=0.0, roughness=0.35, emission=None, emission_strength=0.0):
     material = bpy.data.materials.new(name=name)
     material.diffuse_color = (*color, 1.0)
@@ -1626,13 +1691,184 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.6.0"
+    tree["vinlab_version"] = "0.7.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
     tree["vinlab_geometry_input"] = getattr(geo_in, "identifier", "Geometry")
     tree["vinlab_geometry_output"] = getattr(geo_out, "identifier", "Geometry")
     return tree, speed_socket, amount_socket
+
+
+def _build_field_scatter_group(settings):
+    """Scatter a source collection on the active mesh, with animated Noise/Color Ramp point selection."""
+    collection = settings.scatter_collection
+    if collection is None:
+        raise ValueError("Choose a Source Collection first")
+    source_objects = [obj for obj in collection.objects if obj.type in {"MESH", "CURVE", "FONT", "SURFACE"}]
+    if not source_objects:
+        raise ValueError("The Source Collection must contain at least one mesh or curve object")
+
+    tree = bpy.data.node_groups.new(name="VINLAB · Noise Color Ramp Scatter", type="GeometryNodeTree")
+    sockets = {}
+    sockets["geometry_in"] = _add_interface_socket(tree, "Geometry", "INPUT", "NodeSocketGeometry")
+    sockets["density"] = _add_interface_socket(tree, "Density", "INPUT", "NodeSocketFloat",
+                                                default=settings.scatter_density, min_value=0.01, max_value=100.0)
+    sockets["noise_scale"] = _add_interface_socket(tree, "Noise Scale", "INPUT", "NodeSocketFloat",
+                                                    default=settings.scatter_noise_scale, min_value=0.01, max_value=50.0)
+    sockets["field_strength"] = _add_interface_socket(tree, "Field Motion", "INPUT", "NodeSocketFloat",
+                                                        default=settings.scatter_field_strength, min_value=0.0, max_value=10.0)
+    sockets["speed"] = _add_interface_socket(tree, "Field Speed", "INPUT", "NodeSocketFloat",
+                                              default=settings.scatter_speed, min_value=0.0, max_value=20.0)
+    sockets["threshold"] = _add_interface_socket(tree, "Mask Threshold", "INPUT", "NodeSocketFloat",
+                                                  default=settings.scatter_threshold, min_value=0.0, max_value=1.0)
+    sockets["seed"] = _add_interface_socket(tree, "Seed", "INPUT", "NodeSocketInt",
+                                             default=settings.scatter_seed, min_value=0, max_value=9999999)
+    sockets["min_scale"] = _add_interface_socket(tree, "Min Scale", "INPUT", "NodeSocketFloat",
+                                                  default=settings.scatter_min_scale, min_value=0.01, max_value=10.0)
+    sockets["max_scale"] = _add_interface_socket(tree, "Max Scale", "INPUT", "NodeSocketFloat",
+                                                  default=max(settings.scatter_min_scale, settings.scatter_max_scale),
+                                                  min_value=0.01, max_value=10.0)
+    sockets["geometry_out"] = _add_interface_socket(tree, "Geometry", "OUTPUT", "NodeSocketGeometry")
+    nodes, links = tree.nodes, tree.links
+    nodes.clear()
+
+    group_in = nodes.new("NodeGroupInput")
+    group_in.location = (-1120, 220)
+    group_out = nodes.new("NodeGroupOutput")
+    group_out.location = (1250, 240)
+
+    distribute = nodes.new("GeometryNodeDistributePointsOnFaces")
+    distribute.location = (-840, 350)
+    distribute.label = "Scatter over the active Plane"
+    links.new(group_in.outputs["Geometry"], distribute.inputs["Mesh"])
+    links.new(group_in.outputs["Density"], distribute.inputs["Density"])
+    links.new(group_in.outputs["Seed"], distribute.inputs["Seed"])
+
+    position = nodes.new("GeometryNodeInputPosition")
+    position.location = (-1090, -230)
+    scene_time = nodes.new("GeometryNodeInputSceneTime")
+    scene_time.location = (-1090, -540)
+    time_speed = _math_node(nodes, "MULTIPLY", "Time × Field Speed", (-850, -520))
+    links.new(scene_time.outputs["Seconds"], time_speed.inputs[0])
+    links.new(group_in.outputs["Speed"], time_speed.inputs[1])
+
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.location = (-620, -200)
+    noise.label = "Animated 4D Noise field"
+    noise.noise_dimensions = "4D"
+    links.new(position.outputs["Position"], noise.inputs["Vector"])
+    links.new(group_in.outputs["Noise Scale"], noise.inputs["Scale"])
+    if noise.inputs.get("W") is not None:
+        links.new(time_speed.outputs[0], noise.inputs["W"])
+
+    ramp = nodes.new("ShaderNodeValToRGB")
+    ramp.location = (-370, -160)
+    ramp.label = "Editable influence Color Ramp"
+    ramp.color_ramp.elements[0].position = 0.38
+    ramp.color_ramp.elements[0].color = (0.015, 0.015, 0.02, 1.0)
+    ramp.color_ramp.elements[1].position = 0.64
+    ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+    links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+
+    rgb_to_bw = nodes.new("ShaderNodeRGBToBW")
+    rgb_to_bw.location = (-110, -170)
+    links.new(ramp.outputs["Color"], rgb_to_bw.inputs["Color"])
+    compare = _math_node(nodes, "GREATER_THAN", "Mask threshold selects affected points", (130, -130))
+    links.new(rgb_to_bw.outputs["Val"], compare.inputs[0])
+    links.new(group_in.outputs["Mask Threshold"], compare.inputs[1])
+
+    sine = _math_node(nodes, "SINE", "Oscillating field motion", (-620, -540))
+    links.new(time_speed.outputs[0], sine.inputs[0])
+    amount = _math_node(nodes, "MULTIPLY", "Motion amount", (-370, -500))
+    links.new(sine.outputs[0], amount.inputs[0])
+    links.new(group_in.outputs["Field Motion"], amount.inputs[1])
+
+    center_color = nodes.new("ShaderNodeVectorMath")
+    center_color.operation = "SUBTRACT"
+    center_color.location = (-100, -430)
+    center_color.label = "Center vector around zero"
+    links.new(noise.outputs["Color"], center_color.inputs[0])
+    center_color.inputs[1].default_value = (0.5, 0.5, 0.5)
+
+    motion_vector = nodes.new("ShaderNodeVectorMath")
+    motion_vector.operation = "SCALE"
+    motion_vector.location = (150, -410)
+    motion_vector.label = "Noise direction × animated strength"
+    links.new(center_color.outputs["Vector"], motion_vector.inputs["Vector"])
+    links.new(amount.outputs[0], motion_vector.inputs["Scale"])
+
+    set_position = nodes.new("GeometryNodeSetPosition")
+    set_position.location = (390, 350)
+    set_position.label = "Only ramp-selected scatter points move"
+    links.new(distribute.outputs["Points"], set_position.inputs["Geometry"])
+    links.new(compare.outputs[0], set_position.inputs["Selection"])
+    links.new(motion_vector.outputs["Vector"], set_position.inputs["Offset"])
+
+    source = nodes.new("GeometryNodeCollectionInfo")
+    source.location = (100, 670)
+    source.label = "Separate source objects from collection"
+    source.inputs["Collection"].default_value = collection
+    if source.inputs.get("Separate Children") is not None:
+        source.inputs["Separate Children"].default_value = True
+    if source.inputs.get("Reset Children") is not None:
+        source.inputs["Reset Children"].default_value = True
+    source_instances = source.outputs.get("Instances") or source.outputs.get("Geometry")
+    if source_instances is None:
+        bpy.data.node_groups.remove(tree)
+        raise RuntimeError("Blender Collection Info node has no Instances/Geometry output")
+
+    point_index = nodes.new("GeometryNodeInputIndex")
+    point_index.location = (100, -740)
+
+    pick_index = nodes.new("FunctionNodeRandomValue")
+    pick_index.data_type = "INT"
+    pick_index.location = (340, -700)
+    pick_index.label = "Random source object per point"
+    pick_index.inputs["Min"].default_value = 0
+    pick_index.inputs["Max"].default_value = max(0, len(source_objects)-1)
+    links.new(point_index.outputs["Index"], pick_index.inputs["ID"])
+    links.new(group_in.outputs["Seed"], pick_index.inputs["Seed"])
+
+    rotation = nodes.new("FunctionNodeRandomValue")
+    rotation.data_type = "FLOAT_VECTOR"
+    rotation.location = (340, -930)
+    rotation.label = "Random rotation"
+    rotation.inputs["Min"].default_value = (0.0, 0.0, 0.0)
+    rotation.inputs["Max"].default_value = (0.0, 0.0, math.tau)
+    links.new(point_index.outputs["Index"], rotation.inputs["ID"])
+    links.new(group_in.outputs["Seed"], rotation.inputs["Seed"])
+
+    scale = nodes.new("FunctionNodeRandomValue")
+    scale.data_type = "FLOAT"
+    scale.location = (340, -1160)
+    scale.label = "Random size"
+    links.new(point_index.outputs["Index"], scale.inputs["ID"])
+    links.new(group_in.outputs["Seed"], scale.inputs["Seed"])
+    links.new(group_in.outputs["Min Scale"], scale.inputs["Min"])
+    links.new(group_in.outputs["Max Scale"], scale.inputs["Max"])
+
+    uniform_scale = nodes.new("ShaderNodeCombineXYZ")
+    uniform_scale.location = (590, -1050)
+    for axis in ("X", "Y", "Z"):
+        links.new(scale.outputs["Value"], uniform_scale.inputs[axis])
+
+    instance = nodes.new("GeometryNodeInstanceOnPoints")
+    instance.location = (850, 350)
+    instance.label = "Instance the selected source object"
+    links.new(set_position.outputs["Geometry"], instance.inputs["Points"])
+    links.new(source_instances, instance.inputs["Instance"])
+    links.new(pick_index.outputs["Value"], instance.inputs["Instance Index"])
+    if instance.inputs.get("Pick Instance") is not None:
+        instance.inputs["Pick Instance"].default_value = True
+    links.new(rotation.outputs["Value"], instance.inputs["Rotation"])
+    links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
+    links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
+
+    tree["vinlab_version"] = "0.7.0"
+    tree["vinlab_feature"] = "noise_color_ramp_scatter"
+    tree["vinlab_source_collection"] = collection.name
+    return tree, sockets
 
 
 class VINLAB_Settings(bpy.types.PropertyGroup):
@@ -1644,6 +1880,24 @@ class VINLAB_Settings(bpy.types.PropertyGroup):
     size: FloatProperty(name="Size", default=2.0, min=0.2, max=20.0, precision=2)
     twist: FloatProperty(name="Twist", description="Twist strength for twisted columns", default=2.6, min=-12.0, max=12.0, precision=2)
     branch_depth: IntProperty(name="Branch Depth", default=3, min=1, max=4)
+    separate_parts: BoolProperty(
+        name="Auto Separate Components",
+        description="Split disconnected generated parts into independently selectable objects",
+        default=True,
+    )
+    scatter_collection: PointerProperty(
+        name="Source Collection",
+        description="Collection containing objects to scatter on the active mesh plane",
+        type=bpy.types.Collection,
+    )
+    scatter_density: FloatProperty(name="Density", default=2.0, min=0.01, max=100.0, precision=2)
+    scatter_noise_scale: FloatProperty(name="Noise Scale", default=1.4, min=0.01, max=50.0, precision=2)
+    scatter_field_strength: FloatProperty(name="Field Motion", default=0.35, min=0.0, max=10.0, precision=2)
+    scatter_speed: FloatProperty(name="Field Speed", default=1.0, min=0.0, max=20.0, precision=2)
+    scatter_threshold: FloatProperty(name="Mask Threshold", default=0.52, min=0.0, max=1.0, precision=2)
+    scatter_min_scale: FloatProperty(name="Min Scale", default=0.65, min=0.01, max=10.0, precision=2)
+    scatter_max_scale: FloatProperty(name="Max Scale", default=1.25, min=0.01, max=10.0, precision=2)
+    scatter_seed: IntProperty(name="Scatter Seed", default=17, min=0, max=9999999)
     animation_type: EnumProperty(
         name="Animation", items=ANIMATION_ITEMS, default="BOB"
     )
@@ -1709,12 +1963,24 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             self.report({"ERROR"}, f"Shape generation failed: {exc}")
             return {"CANCELLED"}
 
-        obj["vinlab_shape_type"] = shape_type
-        obj["vinlab_seed"] = settings.seed
-        obj["vinlab_version"] = "0.6.0"
+        base_name = obj.name
+        parts = _separate_loose_parts(context, obj) if settings.separate_parts else [obj]
+        if not parts:
+            parts = [obj]
+        parts = sorted(parts, key=lambda item: item.name)
+        for index, part in enumerate(parts):
+            if len(parts) > 1:
+                part.name = f"{base_name} · Part {index + 1:03d}"
+                if part.data is not None:
+                    part.data.name = part.name + " Mesh"
+            part["vinlab_shape_type"] = shape_type
+            part["vinlab_seed"] = settings.seed
+            part["vinlab_version"] = "0.7.0"
+        if parts:
+            context.view_layer.objects.active = obj if obj in parts else parts[0]
         self.report(
             {"INFO"},
-            f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
+            f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces · {len(parts)} selectable part(s)",
         )
         return {"FINISHED"}
 
@@ -1789,6 +2055,91 @@ class VINLAB_OT_build_animation(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class VINLAB_OT_separate_loose_parts(bpy.types.Operator):
+    bl_idname = "vinlab.separate_loose_parts"
+    bl_label = "Separate Loose Parts"
+    bl_description = "Turn disconnected islands in selected mesh objects into separately selectable Blender objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        targets = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if not targets and context.object is not None and context.object.type == "MESH":
+            targets = [context.object]
+        if not targets:
+            self.report({"ERROR"}, "Select at least one mesh object")
+            return {"CANCELLED"}
+        all_parts = []
+        for target in targets:
+            base_name = target.name
+            parts = sorted(_separate_loose_parts(context, target), key=lambda item: item.name)
+            if len(parts) > 1:
+                for index, part in enumerate(parts):
+                    part.name = f"{base_name} · Part {index + 1:03d}"
+                    if part.data is not None:
+                        part.data.name = part.name + " Mesh"
+            all_parts.extend(parts)
+        bpy.ops.object.select_all(action="DESELECT")
+        for part in all_parts:
+            part.select_set(True)
+        if all_parts:
+            context.view_layer.objects.active = all_parts[0]
+        self.report({"INFO"}, f"Separated selection into {len(all_parts)} object part(s)")
+        return {"FINISHED"}
+
+
+def settings_collection_invalid(collection):
+    if collection is None:
+        return True
+    return not any(obj.type in {"MESH", "CURVE", "FONT", "SURFACE"} for obj in collection.objects)
+
+
+class VINLAB_OT_build_field_scatter(bpy.types.Operator):
+    bl_idname = "vinlab.build_field_scatter"
+    bl_label = "Build Noise / Color Ramp Scatter"
+    bl_description = "Scatter objects from a source collection across the active Plane and animate only the Noise/Color-Ramp-selected points"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        obj = context.object
+        if obj is None or obj.type != "MESH":
+            self.report({"ERROR"}, "Select a mesh Plane first; it is the scattering surface")
+            return {"CANCELLED"}
+        settings = context.scene.vinlab_settings
+        if settings_collection_invalid(settings.scatter_collection):
+            self.report({"ERROR"}, "Choose a Source Collection containing separate mesh or curve objects")
+            return {"CANCELLED"}
+        try:
+            tree, sockets = _build_field_scatter_group(settings)
+            modifier = obj.modifiers.get("VINLAB Noise Scatter")
+            if modifier is None or modifier.type != "NODES":
+                modifier = obj.modifiers.new(name="VINLAB Noise Scatter", type="NODES")
+            modifier.node_group = tree
+            values = {
+                "density": settings.scatter_density,
+                "noise_scale": settings.scatter_noise_scale,
+                "field_strength": settings.scatter_field_strength,
+                "speed": settings.scatter_speed,
+                "threshold": settings.scatter_threshold,
+                "seed": settings.scatter_seed,
+                "min_scale": settings.scatter_min_scale,
+                "max_scale": max(settings.scatter_min_scale, settings.scatter_max_scale),
+            }
+            for key, value in values.items():
+                socket = sockets.get(key)
+                identifier = getattr(socket, "identifier", None) if socket is not None else None
+                if identifier:
+                    modifier[identifier] = value
+            obj["vinlab_scatter_collection"] = settings.scatter_collection.name
+            obj["vinlab_scatter_mask"] = "Noise Texture -> Color Ramp -> Threshold -> Set Position Selection"
+            obj["vinlab_version"] = "0.7.0"
+            context.view_layer.update()
+        except Exception as exc:
+            self.report({"ERROR"}, f"Noise / Color Ramp Scatter failed: {exc}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Built Noise / Color Ramp Scatter on {obj.name}")
+        return {"FINISHED"}
+
+
 class VINLAB_OT_randomize_seed(bpy.types.Operator):
     bl_idname = "vinlab.randomize_seed"
     bl_label = "New Random Variation"
@@ -1817,13 +2168,15 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.prop(settings, "seed")
         box.prop(settings, "detail")
         box.prop(settings, "size")
+        box.prop(settings, "separate_parts")
         if settings.shape_type in {"RANDOM", "TWISTED_COLUMN", "FUTURE_SCULPTURE"}:
             box.prop(settings, "twist")
         if settings.shape_type in {"RANDOM", "BRANCHING_FORM"}:
             box.prop(settings, "branch_depth")
         row = box.row(align=True)
-        row.operator("vinlab.generate_shape", text="Generate Shape", icon="MESH_DATA")
+        row.operator("vinlab.generate_shape", text="Generate Object", icon="MESH_DATA")
         row.operator("vinlab.randomize_seed", text="New Variant", icon="FILE_REFRESH")
+        box.operator("vinlab.separate_loose_parts", text="Separate Existing Mesh", icon="UNLINKED")
 
         box = layout.box()
         box.label(text="2 · Sci-Fi Scene Builder", icon="WORLD")
@@ -1849,6 +2202,21 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.operator("vinlab.build_animation", text="Build Geometry Nodes", icon="NODETREE")
         box.label(text="Applies to the active object", icon="INFO")
 
+        box = layout.box()
+        box.label(text="4 · Noise / Color Ramp Scatter", icon="FORCE_NOISE")
+        box.label(text="Select a Plane, then choose a source collection")
+        box.prop(settings, "scatter_collection")
+        box.prop(settings, "scatter_density")
+        box.prop(settings, "scatter_noise_scale")
+        box.prop(settings, "scatter_threshold")
+        box.prop(settings, "scatter_field_strength")
+        box.prop(settings, "scatter_speed")
+        row = box.row(align=True)
+        row.prop(settings, "scatter_min_scale")
+        row.prop(settings, "scatter_max_scale")
+        box.prop(settings, "scatter_seed")
+        box.operator("vinlab.build_field_scatter", text="Scatter + Animate", icon="NODETREE")
+
         layout.separator()
         layout.label(text="Generated node groups stay editable.")
         layout.label(text="Scene Time drives the animation.")
@@ -1859,6 +2227,8 @@ CLASSES = (
     VINLAB_OT_generate_shape,
     VINLAB_OT_build_animation,
     VINLAB_OT_randomize_seed,
+    VINLAB_OT_separate_loose_parts,
+    VINLAB_OT_build_field_scatter,
     VINLAB_OT_generate_scifi_scene,
     VINLAB_PT_main,
 )
