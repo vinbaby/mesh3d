@@ -39,8 +39,8 @@ The generated groups remain editable in Blender's Geometry Node Editor. Speed an
 ## Notes and limitations
 - Shapes are algorithmic procedural geometry, not AI-generated interpretations of a prompt.
 - Animation uses Scene Time, so preview it by playing the timeline.
-- The first version intentionally includes five shape families and four animation templates. It does not promise production-ready topology for every downstream use.
-- This repository's CI checks Python syntax and structural smoke tests. A Blender GUI/runtime test still needs to be performed in Blender; no claim of direct GUI testing is made here.
+- Version 0.2.0 includes six shape families and four animation templates. It does not promise production-ready topology for every downstream use.
+- CI compiles the add-on and executes its mesh and Geometry Nodes builders in background Blender. Interactive GUI drawing and visual art-direction should still be checked in the user's Blender session.
 - Requires Blender 3.6 or newer in principle; Geometry Nodes interface APIs vary across Blender versions, so report the exact Blender version if runtime node creation fails.
 
 
