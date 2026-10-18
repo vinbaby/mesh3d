@@ -1751,7 +1751,7 @@ def _build_field_scatter_group(settings):
     scene_time.location = (-1090, -540)
     time_speed = _math_node(nodes, "MULTIPLY", "Time × Field Speed", (-850, -520))
     links.new(scene_time.outputs["Seconds"], time_speed.inputs[0])
-    links.new(group_in.outputs["Speed"], time_speed.inputs[1])
+    links.new(group_in.outputs["Field Speed"], time_speed.inputs[1])
 
     noise = nodes.new("ShaderNodeTexNoise")
     noise.location = (-620, -200)
