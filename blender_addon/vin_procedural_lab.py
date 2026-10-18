@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -440,6 +440,216 @@ def _new_mesh_object(context, name, vertices, faces, seed):
     return obj
 
 
+def _scene_material(name, color, metallic=0.0, roughness=0.35, emission=None, emission_strength=0.0):
+    material = bpy.data.materials.new(name=name)
+    material.diffuse_color = (*color, 1.0)
+    material.use_nodes = True
+    shader = material.node_tree.nodes.get("Principled BSDF")
+    if shader is not None:
+        shader.inputs["Base Color"].default_value = (*color, 1.0)
+        shader.inputs["Metallic"].default_value = metallic
+        shader.inputs["Roughness"].default_value = roughness
+        if emission is not None:
+            emission_socket = shader.inputs.get("Emission Color") or shader.inputs.get("Emission")
+            if emission_socket is not None:
+                emission_socket.default_value = (*emission, 1.0)
+            strength = shader.inputs.get("Emission Strength")
+            if strength is not None:
+                strength.default_value = emission_strength
+    return material
+
+
+def _scene_box(collection, name, location, dimensions, material, bevel=0.06):
+    dx, dy, dz = (max(0.02, float(v)) * 0.5 for v in dimensions)
+    verts = [(-dx,-dy,-dz),(dx,-dy,-dz),(dx,dy,-dz),(-dx,dy,-dz),
+             (-dx,-dy,dz),(dx,-dy,dz),(dx,dy,dz),(-dx,dy,dz)]
+    faces = [(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
+    mesh = bpy.data.meshes.new(name + " Mesh")
+    mesh.from_pydata(verts, [], faces)
+    mesh.materials.append(material)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    collection.objects.link(obj)
+    obj.location = location
+    if bevel > 0:
+        mod = obj.modifiers.new("Machined bevels", "BEVEL")
+        mod.width = min(bevel, min(dimensions) * 0.2)
+        mod.segments = 3
+        obj.modifiers.new("Weighted normals", "WEIGHTED_NORMAL")
+    return obj
+
+
+def _scene_cylinder(collection, name, location, radius, depth, material, sides=48):
+    verts, faces = [], []
+    for z in (-depth * 0.5, depth * 0.5):
+        for i in range(sides):
+            angle = math.tau * i / sides
+            verts.append((radius * math.cos(angle), radius * math.sin(angle), z))
+    faces.extend([tuple(range(sides - 1, -1, -1)), tuple(sides + i for i in range(sides))])
+    for i in range(sides):
+        j = (i + 1) % sides
+        faces.append((i, j, sides + j, sides + i))
+    mesh = bpy.data.meshes.new(name + " Mesh")
+    mesh.from_pydata(verts, [], faces)
+    mesh.materials.append(material)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    collection.objects.link(obj)
+    obj.location = location
+    bevel = obj.modifiers.new("Rounded machined edges", "BEVEL")
+    bevel.width = min(0.06, depth * 0.18, radius * 0.08)
+    bevel.segments = 2
+    obj.modifiers.new("Weighted normals", "WEIGHTED_NORMAL")
+    return obj
+
+
+def _scene_look_at(obj, target):
+    direction = Vector(target) - obj.location
+    if direction.length > 1e-8:
+        obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+
+def _build_scifi_scene(context, settings, rng):
+    """Build a complete editable hard-surface sci-fi scene with lighting and camera."""
+    scene = context.scene
+    collection = bpy.data.collections.new("VINLAB Sci-Fi Scene · " + str(settings.seed))
+    scene.collection.children.link(collection)
+    shell = _scene_material("VINLAB · Ceramic titanium", (0.62, 0.70, 0.79), 0.58, 0.24)
+    dark = _scene_material("VINLAB · Graphite armor", (0.018, 0.035, 0.065), 0.75, 0.28)
+    steel = _scene_material("VINLAB · Blue steel", (0.07, 0.15, 0.25), 0.72, 0.30)
+    amber = _scene_material("VINLAB · Amber plasma", (0.9, 0.16, 0.012), 0.25, 0.22, (1.0, 0.09, 0.005), 4.0)
+    cyan = _scene_material("VINLAB · Cyan plasma", (0.015, 0.34, 0.8), 0.2, 0.2, (0.01, 0.22, 1.0), 3.0)
+    floor_mat = _scene_material("VINLAB · Basalt", (0.025, 0.04, 0.065), 0.35, 0.45)
+    glow = (amber, cyan)
+
+    def box(name, loc, dims, mat, bevel=0.06):
+        return _scene_box(collection, name, loc, dims, mat, bevel)
+
+    def tower(prefix, x, y, h, w, d, hero=False):
+        z0 = 0.32
+        box(prefix + " foundation", (x,y,z0+0.12), (w*1.3,d*1.3,0.24), dark, 0.08)
+        box(prefix + " foundation light", (x,y,z0+0.26), (w*1.18,d*1.18,0.045), amber if hero else cyan, 0.01)
+        body_h = h * 0.72
+        body_z = z0 + 0.28 + body_h*0.5
+        main = box(prefix + " armor shell", (x,y,body_z), (w,d,body_h), shell if hero else steel, 0.12)
+        band_count = rng.randint(2, 4)
+        for j in range(band_count):
+            z = z0 + 0.28 + body_h*(j+1)/(band_count+1)
+            box(prefix + " armor band " + str(j+1), (x,y,z), (w*1.07,d*1.07,max(0.07,h*0.025)), dark, 0.025)
+            if rng.random() < 0.9:
+                sx = x + rng.choice((-0.34,0.34))*w
+                box(prefix + " energy seam " + str(j+1), (sx,y-d*0.515,z), (w*0.035,0.035,h*0.07), rng.choice(glow), 0.008)
+        fy = y - d*0.5 - 0.055
+        pw, ph = w*rng.uniform(0.28,0.43), body_h*rng.uniform(0.42,0.64)
+        pz = body_z + rng.uniform(-0.05,0.08)*h
+        box(prefix + " recessed interface", (x,fy,pz), (pw,0.10,ph), dark, 0.045)
+        box(prefix + " interface amber edge", (x-pw*0.5+0.02,fy-0.06,pz), (0.035,0.025,ph*0.85), rng.choice(glow), 0.008)
+        for j in range(rng.randint(3,6)):
+            sz = pz + rng.uniform(-0.36,0.36)*ph
+            sw = pw*rng.uniform(0.22,0.78)
+            box(prefix + " control groove " + str(j+1), (x+rng.uniform(-0.06,0.06)*w,fy-0.065,sz), (sw,0.022,0.025), shell if j%2 else cyan, 0.005)
+        sx = x+w*0.5+0.045
+        box(prefix + " side armor", (sx,y,body_z), (0.09,d*0.55,body_h*0.62), dark, 0.025)
+        for j in range(rng.randint(3,6)):
+            vz = z0+0.34+body_h*0.18+j*body_h*0.045
+            box(prefix + " vent " + str(j+1), (sx+0.05,y,vz), (0.035,d*0.36,0.035), shell, 0.008)
+        roof = z0 + 0.28 + body_h
+        box(prefix + " rooftop cap", (x,y,roof+0.06), (w*0.78,d*0.78,0.12), dark, 0.035)
+        mast = h*rng.uniform(0.07,0.16)
+        box(prefix + " antenna", (x+w*0.18,y,roof+0.12+mast*0.5), (0.06,0.06,mast), shell, 0.015)
+        box(prefix + " beacon", (x+w*0.18,y,roof+0.12+mast), (0.15,0.15,0.08), amber, 0.02)
+        return main
+
+    # Stage, layered reactor plaza, and runway marks.
+    box("Environment ground", (0,0,-0.38), (38,38,0.6), floor_mat, 0.16)
+    _scene_cylinder(collection, "Plaza lower armor", (0,0,-0.02), 7.4, 0.26, dark)
+    _scene_cylinder(collection, "Plaza cyan ring", (0,0,0.13), 7.1, 0.07, cyan)
+    _scene_cylinder(collection, "Plaza upper deck", (0,0,0.32), 6.85, 0.32, steel)
+    _scene_cylinder(collection, "Plaza ceramic surface", (0,0,0.50), 6.55, 0.07, shell)
+    for i in range(24):
+        a = math.tau*i/24
+        mark = box("Plaza radial marker " + str(i+1), (5.9*math.cos(a),5.9*math.sin(a),0.55), (rng.uniform(0.2,0.48),0.045,0.02), glow[i%2], 0.005)
+        mark.rotation_euler[2] = a
+
+    central_h = rng.uniform(8.4,10.4)
+    hero = tower("CORE TOWER",0.0,0.65,central_h,rng.uniform(2.6,3.15),rng.uniform(2.0,2.5),True)
+    tower("NORTH WING",-4.2,1.2,rng.uniform(5.0,7.0),rng.uniform(1.6,2.1),rng.uniform(1.5,1.9))
+    tower("SOUTH WING",4.0,0.25,rng.uniform(5.4,7.4),rng.uniform(1.6,2.15),rng.uniform(1.5,2.0))
+    for i in range(rng.randint(5,8)):
+        angle = math.tau*i/7 + rng.uniform(-0.2,0.2)
+        radius = rng.uniform(8.3,11.5)
+        tower("Perimeter station " + str(i+1), math.cos(angle)*radius, math.sin(angle)*radius,
+              rng.uniform(2.5,5.6),rng.uniform(0.95,1.7),rng.uniform(0.95,1.7))
+
+    # Orbital rails and an elevated connector give the silhouette scale.
+    for i, tilt in enumerate((0.24,-0.48,0.86)):
+        points = []
+        for j in range(128):
+            t = math.tau*j/128
+            p = Vector((3.35*math.cos(t),0.0,central_h*0.47*math.sin(t)))
+            p.rotate(Quaternion(Vector((0.0,1.0,0.0)),tilt+i*0.31))
+            points.append(p+Vector((0.0,0.65,central_h*0.52)))
+        verts, faces = [], []
+        _append_tube(verts,faces,points,0.045 if i==0 else 0.027,sides=8,closed=True,cap_ends=False)
+        mesh = bpy.data.meshes.new("Orbital rail mesh")
+        mesh.from_pydata(verts,[],faces)
+        mesh.materials.append(cyan if i==1 else dark)
+        mesh.update()
+        rail = bpy.data.objects.new("Core orbital rail " + str(i+1),mesh)
+        collection.objects.link(rail)
+        for poly in mesh.polygons:
+            poly.use_smooth = True
+
+    bridge_z = rng.uniform(4.2,5.2)
+    box("Transit bridge armor", (0,0.95,bridge_z), (7.8,0.62,0.22), dark, 0.05)
+    box("Transit bridge plasma rail", (0,0.60,bridge_z+0.12), (7.4,0.045,0.03), amber, 0.008)
+    for i in range(7):
+        x=-3.1+i*6.2/6
+        box("Bridge support " + str(i+1), (x,0.95,bridge_z-0.32), (0.07,0.08,0.62), shell, 0.015)
+    for side in (-1,1):
+        box("Approach lane " + str(side), (side*2.1,-7.4,-0.02), (0.7,7.5,0.08), dark, 0.02)
+        for i in range(9):
+            box("Lane light " + str(side) + " " + str(i+1), (side*2.1,-10.7+i*0.78,0.025), (0.42,0.045,0.02), amber if i%3==0 else cyan, 0.004)
+
+    camera_data = bpy.data.cameras.new("VINLAB Sci-Fi Camera")
+    camera = bpy.data.objects.new("VINLAB Sci-Fi Camera", camera_data)
+    collection.objects.link(camera)
+    camera.location = (19.5,-27.5,17.0)
+    _scene_look_at(camera,(0,0,4))
+    camera_data.lens = 42
+    scene.camera = camera
+
+    for name, loc, color, energy, size in (
+        ("VINLAB Key Light",(3,-10,18),(0.72,0.84,1.0),2600,11),
+        ("VINLAB Warm Rim",(-9,5,10),(1.0,0.28,0.08),1900,8),
+        ("VINLAB Cool Rim",(8,8,12),(0.08,0.38,1.0),2100,7),
+    ):
+        data = bpy.data.lights.new(name,type="AREA")
+        data.energy, data.color, data.shape, data.size = energy, color, "DISK", size
+        lamp = bpy.data.objects.new(name,data)
+        collection.objects.link(lamp)
+        lamp.location = loc
+        _scene_look_at(lamp,(0,0,2))
+
+    world = scene.world
+    if world is not None:
+        world.color = (0.018,0.025,0.045)
+        if world.use_nodes and world.node_tree:
+            bg = world.node_tree.nodes.get("Background")
+            if bg is not None:
+                bg.inputs["Color"].default_value = (0.018,0.025,0.045,1.0)
+                bg.inputs["Strength"].default_value = 0.32
+    scene.render.resolution_x, scene.render.resolution_y = 1600, 900
+    scene.render.resolution_percentage = 100
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    hero.select_set(True)
+    context.view_layer.objects.active = hero
+    scene["vinlab_scifi_scene_seed"] = settings.seed
+    scene["vinlab_scifi_scene_collection"] = collection.name
+    return collection, hero
+
+
 def _add_interface_socket(tree, name, in_out, socket_type, default=None, min_value=None, max_value=None):
     if hasattr(tree, "interface"):
         socket = tree.interface.new_socket(
@@ -614,7 +824,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.2.0"
+    tree["vinlab_version"] = "0.3.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -689,6 +899,30 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             {"INFO"},
             f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
         )
+        return {"FINISHED"}
+
+
+class VINLAB_OT_generate_scifi_scene(bpy.types.Operator):
+    bl_idname = "vinlab.generate_scifi_scene"
+    bl_label = "Generate Sci-Fi Scene"
+    bl_description = "Generate an editable sci-fi environment with modular towers, glowing details, camera, and lights"
+    bl_options = {"REGISTER", "UNDO"}
+
+    new_variation: BoolProperty(default=False, options={"HIDDEN"})
+
+    def execute(self, context):
+        settings = context.scene.vinlab_settings
+        if self.new_variation:
+            settings.seed = (settings.seed + 1) % 10000000
+        rng = random.Random(settings.seed ^ 0xC1F1)
+        try:
+            collection, hero = _build_scifi_scene(context, settings, rng)
+        except Exception as exc:
+            self.report({"ERROR"}, f"Sci-Fi scene generation failed: {exc}")
+            return {"CANCELLED"}
+        hero["vinlab_scifi_scene_seed"] = settings.seed
+        hero["vinlab_version"] = "0.3.0"
+        self.report({"INFO"}, f"Generated sci-fi scene with {len(collection.objects)} objects · Seed {settings.seed}")
         return {"FINISHED"}
 
 
@@ -775,7 +1009,14 @@ class VINLAB_PT_main(bpy.types.Panel):
         row.operator("vinlab.randomize_seed", text="New Variant", icon="FILE_REFRESH")
 
         box = layout.box()
-        box.label(text="2 · Animation Builder", icon="NODETREE")
+        box.label(text="2 · Sci-Fi Scene Builder", icon="WORLD")
+        box.label(text="Generate a complete editable environment")
+        row = box.row(align=True)
+        row.operator("vinlab.generate_scifi_scene", text="Generate Scene", icon="SCENE")
+        row.operator("vinlab.generate_scifi_scene", text="Random Scene", icon="FILE_REFRESH").new_variation = True
+
+        box = layout.box()
+        box.label(text="3 · Animation Builder", icon="NODETREE")
         box.prop(settings, "animation_type")
         box.prop(settings, "animation_speed")
         if settings.animation_type == "BOB":
@@ -801,6 +1042,7 @@ CLASSES = (
     VINLAB_OT_generate_shape,
     VINLAB_OT_build_animation,
     VINLAB_OT_randomize_seed,
+    VINLAB_OT_generate_scifi_scene,
     VINLAB_PT_main,
 )
 
