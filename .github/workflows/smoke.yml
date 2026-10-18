@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "app/**"
+      - "blender_addon/**"
       - "tests/**"
       - "pyproject.toml"
       - "updates/**"
@@ -25,7 +26,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile Python files
-        run: python -m compileall -q app tests
+        run: python -m compileall -q app tests blender_addon
       - name: Install test runner
         run: python -m pip install "pytest>=8,<10"
       - name: Run smoke tests
