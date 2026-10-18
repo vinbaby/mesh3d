@@ -1,24 +1,24 @@
 # VIN 3D Studio — Clean Start
 
-The current prototype is a small Python/PySide6 desktop app. The v0.1.1 change is delivered as an **incremental update**, not a reinstall.
+The current prototype is a small Python/PySide6 desktop app. Updates are provided incrementally; there is no need to reinstall the project for each UI change.
 
-## Apply update v0.1.1
+## Apply update v0.1.2
 1. Close VIN 3D Studio.
-2. Download `UPDATE_TO_V0.1.1.bat` from this repository.
-3. Put the updater next to `run_windows.bat` in the existing Studio folder.
-4. Run the updater. It downloads only the versioned `app/main.py` payload, saves a backup, and checks Python syntax. If the check fails, it restores the previous file.
-5. Run `run_windows.bat` to test the app.
+2. Download `UPDATE_TO_V0.1.2.bat` from this repository.
+3. Place it next to `run_windows.bat` in the folder where the Studio is already installed.
+4. Run the updater. It downloads only the versioned `app/main.py` payload, creates a backup, and checks Python syntax. If the check fails, it attempts to restore the previous file.
+5. Run `run_windows.bat` to open the updated Studio.
 
-No dependency reinstall is required for this update.
+No dependency reinstall is required.
 
-## v0.1.1 changes
-- Foreground extraction using border-connected background flood fill for plain-background images
-- Surface mesh follows the detected silhouette rather than filling the whole rectangular image
-- Front and back surfaces with side walls create an extruded silhouette mesh
-- Wireframe edges appear only when Wireframe is enabled
-- Keeps the current Studio shell, image loader, viewport controls, resolution selector and stats
+## v0.1.2 — Reference frame drawing
+- Import a reference image and show it flat in the viewport
+- Toggle manual frame drawing
+- Left-click and drag to trace strokes/edges directly on the image
+- Undo the last stroke or clear the frame
+- Adjust line width and zoom the image for closer tracing
+- Save stroke points as JSON in normalized image coordinates
+- Smoke tests cover syntax and the presence of the new workflow
 
-## Important limitation
-This is silhouette-based 2.5D extrusion, **not** AI generation of a fully shaped character. It preserves the source image's colors on the front surface but does not infer face depth, body volume, unseen anatomy or the character's back side. Plain-background reference images work best. Full image-to-3D generation and GLB export are separate future steps.
-
-Rigging, weight paint, and animation remain out of scope for this clean-start phase.
+## Important scope
+The app records **2D guide strokes over the reference image**. It does not create a complete 3D model automatically and does not require an AI API. This stage is for manually constructing visual frame guides; the next step can turn these guides into editable mesh vertices and edges, then connect them to a 3D workflow.
