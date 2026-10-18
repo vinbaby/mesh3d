@@ -53,7 +53,13 @@ def main() -> None:
         if len(obj.data.vertices) == 0 or len(obj.data.polygons) == 0:
             raise AssertionError(f"{shape_type} created an empty mesh")
         generated.append(obj)
-        print(f"[OK] {shape_type}: {len(obj.data.vertices)} vertices, {len(obj.data.polygons)} polygons")
+        selected_parts = [
+            part for part in bpy.context.selected_objects
+            if part.type == "MESH" and part.get("vinlab_shape_type") == shape_type
+        ]
+        if settings.separate_parts and shape_type in ("HEX_ARMOR", "CIRCUIT_CORE", "ORBITAL_PARTICLE", "CELLULAR_VOID", "SPIKE_BLOOM") and len(selected_parts) < 2:
+            raise AssertionError(f"{shape_type} was not split into independently selectable components")
+        print(f"[OK] {shape_type}: {len(obj.data.vertices)} vertices, {len(obj.data.polygons)} polygons, {len(selected_parts) or 1} selected part(s)")
 
     target = generated[0]
     for obj in bpy.context.selected_objects:
@@ -76,6 +82,69 @@ def main() -> None:
             raise AssertionError(f"{animation_type} generated an incomplete node graph")
         bpy.context.view_layer.update()
         print(f"[OK] {animation_type}: {len(node_group.nodes)} nodes, {len(node_group.links)} links")
+
+
+    # Exercise the Plane scatter graph using a dedicated source collection.
+    source_collection = bpy.data.collections.new("VINLAB Test Scatter Sources")
+    bpy.context.scene.collection.children.link(source_collection)
+    cube_mesh = bpy.data.meshes.new("Scatter Test Cube Mesh")
+    cube_mesh.from_pydata(
+        [(-0.5,-0.5,-0.5),(0.5,-0.5,-0.5),(0.5,0.5,-0.5),(-0.5,0.5,-0.5),
+         (-0.5,-0.5,0.5),(0.5,-0.5,0.5),(0.5,0.5,0.5),(-0.5,0.5,0.5)],
+        [],
+        [(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)],
+    )
+    cube_mesh.update()
+    source_cube = bpy.data.objects.new("Scatter Test Cube", cube_mesh)
+    source_collection.objects.link(source_cube)
+    sphere_mesh = bpy.data.meshes.new("Scatter Test Sphere Mesh")
+    sphere_mesh.from_pydata(
+        [(0,0,1),(1,0,0),(0,1,0),(-1,0,0),(0,-1,0),(0,0,-1)],
+        [],
+        [(0,2,1),(0,3,2),(0,4,3),(0,1,4),(5,1,2),(5,2,3),(5,3,4),(5,4,1)],
+    )
+    sphere_mesh.update()
+    source_sphere = bpy.data.objects.new("Scatter Test Sphere", sphere_mesh)
+    source_collection.objects.link(source_sphere)
+
+    plane_mesh = bpy.data.meshes.new("Scatter Test Plane Mesh")
+    plane_mesh.from_pydata([(-5,-5,0),(5,-5,0),(5,5,0),(-5,5,0)], [], [(0,1,2,3)])
+    plane_mesh.update()
+    plane = bpy.data.objects.new("Scatter Test Plane", plane_mesh)
+    bpy.context.scene.collection.objects.link(plane)
+    settings.scatter_collection = source_collection
+    settings.scatter_density = 1.5
+    settings.scatter_noise_scale = 1.4
+    settings.scatter_field_strength = 0.4
+    settings.scatter_speed = 1.1
+    settings.scatter_threshold = 0.52
+    settings.scatter_min_scale = 0.6
+    settings.scatter_max_scale = 1.3
+    settings.scatter_seed = 37
+    for selected in bpy.context.selected_objects:
+        selected.select_set(False)
+    plane.select_set(True)
+    bpy.context.view_layer.objects.active = plane
+    scatter_result = bpy.ops.vinlab.build_field_scatter()
+    if "FINISHED" not in scatter_result:
+        raise AssertionError(f"Noise/Color Ramp scatter builder failed: {scatter_result}")
+    scatter_modifier = plane.modifiers.get("VINLAB Noise Scatter")
+    if scatter_modifier is None or scatter_modifier.node_group is None:
+        raise AssertionError("Plane does not have a Noise Scatter Geometry Nodes modifier")
+    scatter_nodes = {node.bl_idname for node in scatter_modifier.node_group.nodes}
+    required_nodes = {
+        "GeometryNodeDistributePointsOnFaces",
+        "GeometryNodeCollectionInfo",
+        "GeometryNodeInstanceOnPoints",
+        "GeometryNodeSetPosition",
+        "ShaderNodeTexNoise",
+        "ShaderNodeValToRGB",
+    }
+    if not required_nodes.issubset(scatter_nodes):
+        raise AssertionError(f"Noise Scatter node graph is missing required nodes: {required_nodes - scatter_nodes}")
+    if len(scatter_modifier.node_group.links) < 16:
+        raise AssertionError("Noise Scatter node graph is missing required links")
+    print(f"[OK] Noise / Color Ramp Scatter: {len(scatter_nodes)} node types, {len(scatter_modifier.node_group.links)} links")
 
     settings.seed = 24680
     scene_result = bpy.ops.vinlab.generate_scifi_scene()
