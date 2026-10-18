@@ -24,6 +24,7 @@ def test_procedural_shape_generators_are_present() -> None:
         "_build_organic_blob",
         "_build_crystal_cluster",
         "_build_branching_form",
+        "_build_future_sculpture",
     ):
         assert f"def {builder}" in source
     assert "class VINLAB_OT_generate_shape" in source
