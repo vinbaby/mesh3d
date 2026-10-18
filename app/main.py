@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import sys
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -220,7 +221,7 @@ class StudioWindow(QMainWindow):
         left_layout.addWidget(self.file_label)
 
         left_layout.addSpacing(8)
-        left_layout.addWidget(self._section("RELIEF DEPTH"))
+        left_layout.addWidget(self._section("EXTRUSION DEPTH"))
         self.depth_value = QLabel("0.35")
         self.depth_slider = QSlider(Qt.Orientation.Horizontal)
         self.depth_slider.setRange(0, 100)
@@ -319,7 +320,7 @@ class StudioWindow(QMainWindow):
         if img.isNull():
             QMessageBox.warning(self, "Image error", "The selected image could not be opened.")
             return
-        self.image = img.convertToFormat(QImage.Format.Format_RGB32)
+        self.image = img.convertToFormat(QImage.Format.Format_ARGB32)
         self.image_path = Path(filename)
         self.file_label.setText(self.image_path.name)
         self.object_value.setText(self.image_path.name)
@@ -330,8 +331,9 @@ class StudioWindow(QMainWindow):
     def build_mesh(self) -> None:
         if self.image is None:
             return
-        # Treat the chosen resolution as the longest edge, not as a square
-        # canvas. This avoids adding gray mesh strips above/below wide images.
+
+        # Use the selected value as the longest image edge. The mesh follows
+        # the foreground silhouette instead of filling the entire rectangle.
         longest = int(self.res_combo.currentData())
         aspect = self.image.width() / max(1, self.image.height())
         if aspect >= 1.0:
@@ -344,40 +346,149 @@ class StudioWindow(QMainWindow):
         sample = self.image.scaled(
             cols, rows, Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.SmoothTransformation
-        ).convertToFormat(QImage.Format.Format_RGB32)
-
-        depth = self.depth_slider.value() / 100.0
-        vertices: list[tuple[float, float, float]] = []
-        colors: list[tuple[int, int, int]] = []
-        unit = 2.0 / max(1, max(cols - 1, rows - 1))
+        ).convertToFormat(QImage.Format.Format_ARGB32)
+        rgb: list[tuple[int, int, int]] = []
+        alpha: list[int] = []
+        border_colors: list[tuple[int, int, int]] = []
         for y in range(rows):
             for x in range(cols):
                 color = sample.pixelColor(x, y)
-                luminance = (
-                    0.2126 * color.red() + 0.7152 * color.green() + 0.0722 * color.blue()
-                ) / 255.0
-                vertices.append(
-                    ((x - (cols - 1) / 2.0) * unit,
-                     ((rows - 1) / 2.0 - y) * unit,
-                     (luminance - 0.5) * depth)
-                )
-                colors.append((color.red(), color.green(), color.blue()))
+                rgb.append((color.red(), color.green(), color.blue()))
+                alpha.append(color.alpha())
+                if x == 0 or y == 0 or x == cols - 1 or y == rows - 1:
+                    border_colors.append((color.red(), color.green(), color.blue()))
 
-        triangles: list[tuple[int, int, int]] = []
+        # Estimate a flat background from border pixels, then flood-fill only
+        # similar pixels connected to the image border. Interior white details
+        # (eyes/teeth/highlights) therefore remain part of the silhouette.
+        border_colors.sort(key=lambda c: c[0])
+        red_bg = sorted(c[0] for c in border_colors)[len(border_colors) // 2]
+        green_bg = sorted(c[1] for c in border_colors)[len(border_colors) // 2]
+        blue_bg = sorted(c[2] for c in border_colors)[len(border_colors) // 2]
+        tolerance = 62.0
+        background_candidate = []
+        for i, (red, green, blue) in enumerate(rgb):
+            distance = math.sqrt(
+                (red - red_bg) ** 2 + (green - green_bg) ** 2 + (blue - blue_bg) ** 2
+            )
+            background_candidate.append(alpha[i] < 24 or distance <= tolerance)
+
+        background = bytearray(cols * rows)
+        queue = deque()
+
+        def add_background(index: int) -> None:
+            if background_candidate[index] and not background[index]:
+                background[index] = 1
+                queue.append(index)
+
+        for x in range(cols):
+            add_background(x)
+            add_background((rows - 1) * cols + x)
+        for y in range(rows):
+            add_background(y * cols)
+            add_background(y * cols + cols - 1)
+
+        while queue:
+            index = queue.popleft()
+            x, y = index % cols, index // cols
+            if x > 0:
+                add_background(index - 1)
+            if x + 1 < cols:
+                add_background(index + 1)
+            if y > 0:
+                add_background(index - cols)
+            if y + 1 < rows:
+                add_background(index + cols)
+
+        foreground = [not bool(value) for value in background]
+        foreground_count = sum(foreground)
+        total = cols * rows
+        if foreground_count < max(4, int(total * 0.008)):
+            QMessageBox.warning(
+                self, "Silhouette not found",
+                "Could not identify a foreground shape. Try an image with a clear, "
+                "plain background."
+            )
+            return
+        if foreground_count > int(total * 0.94):
+            QMessageBox.warning(
+                self, "Background not separated",
+                "The image background is too complex or differs too much around the edges. "
+                "For this prototype, use a character/object on a plain background."
+            )
+            return
+
+        # Create a closed extruded silhouette: front and back vertices share XY
+        # positions; only the object boundary receives side walls. Color is
+        # sampled for appearance, not converted into per-pixel vertex height.
+        depth = max(0.02, self.depth_slider.value() / 100.0)
+        unit = 2.0 / max(1, max(cols - 1, rows - 1))
+        vertices: list[tuple[float, float, float]] = []
+        colors: list[tuple[int, int, int]] = []
+        front_map = [-1] * total
+        back_map = [-1] * total
+
+        for y in range(rows):
+            for x in range(cols):
+                index = y * cols + x
+                if not foreground[index]:
+                    continue
+                red, green, blue = rgb[index]
+                px = (x - (cols - 1) / 2.0) * unit
+                py = ((rows - 1) / 2.0 - y) * unit
+                front_map[index] = len(vertices)
+                vertices.append((px, py, depth * 0.5))
+                colors.append((red, green, blue))
+                back_map[index] = len(vertices)
+                vertices.append((px, py, -depth * 0.5))
+                colors.append((int(red * 0.42), int(green * 0.42), int(blue * 0.42)))
+
+        front_faces: list[tuple[int, int, int]] = []
         for y in range(rows - 1):
             for x in range(cols - 1):
-                a = y * cols + x
-                b = a + 1
-                c = a + cols
-                d = c + 1
-                triangles.append((a, c, b))
-                triangles.append((b, c, d))
+                cell = [
+                    front_map[y * cols + x],
+                    front_map[y * cols + x + 1],
+                    front_map[(y + 1) * cols + x + 1],
+                    front_map[(y + 1) * cols + x],
+                ]
+                valid = [vertex for vertex in cell if vertex >= 0]
+                if len(valid) == 4:
+                    a, b, d, c = cell
+                    front_faces.extend(((a, c, b), (b, c, d)))
+                elif len(valid) == 3:
+                    front_faces.append((valid[0], valid[1], valid[2]))
 
-        mesh = ReliefMesh(longest, vertices, colors, triangles)
+        # Count edges in the front triangulation. Edges used once form the
+        # silhouette boundary and receive side-wall quads to close the volume.
+        edge_counts: dict[tuple[int, int], int] = {}
+        for a, b, c in front_faces:
+            for first, second in ((a, b), (b, c), (c, a)):
+                edge = (min(first, second), max(first, second))
+                edge_counts[edge] = edge_counts.get(edge, 0) + 1
+
+        triangles: list[tuple[int, int, int]] = list(front_faces)
+        triangles.extend(
+            (back_map_index, back_map_third, back_map_second)
+            for a, b, c in front_faces
+            for back_map_index, back_map_second, back_map_third
+            in ((back_map[a], back_map[b], back_map[c],),)
+        )
+        # The back-face tuple above is reversed for consistent outward normals.
+        # Add side faces along each exposed front edge.
+        for (a, b), count in edge_counts.items():
+            if count != 1:
+                continue
+            back_a = a + 1
+            back_b = b + 1
+            triangles.append((a, back_a, b))
+            triangles.append((b, back_a, back_b))
+
+        mesh = ReliefMesh(max(cols, rows), vertices, colors, triangles)
         self.viewport.set_mesh(mesh)
-        self.mode_value.setText("Relief preview")
+        self.mode_value.setText("Silhouette solid")
         self.statusBar().showMessage(
-            f"Relief preview · {cols} × {rows} · {len(vertices):,} vertices · "
+            f"Silhouette mesh · {cols} × {rows} sample · {len(vertices):,} vertices · "
             f"{len(triangles):,} triangles"
         )
 
