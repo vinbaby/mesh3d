@@ -1,4 +1,4 @@
-# VIN Procedural Lab — Blender Add-on v0.1.0
+# VIN Procedural Lab — Blender Add-on v0.2.0
 
 This is a separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
@@ -42,3 +42,9 @@ The generated groups remain editable in Blender's Geometry Node Editor. Speed an
 - The first version intentionally includes five shape families and four animation templates. It does not promise production-ready topology for every downstream use.
 - This repository's CI checks Python syntax and structural smoke tests. A Blender GUI/runtime test still needs to be performed in Blender; no claim of direct GUI testing is made here.
 - Requires Blender 3.6 or newer in principle; Geometry Nodes interface APIs vary across Blender versions, so report the exact Blender version if runtime node creation fails.
+
+
+## Update to v0.2.0
+The generator adds **Future Sculpture**, intended for abstract sci-fi / contemporary sculptural forms inspired by twisted, intersecting loops and tubular structures. It uses deterministic procedural geometry; changing the Seed creates different arrangements.
+
+To update an existing install, disable/uninstall the older VIN Procedural Lab version first, then install the updated `vin_procedural_lab.py` from disk and re-enable it. This avoids duplicate panel/operator registrations. It does not change or remove the separate VIN 3D Studio desktop app.
