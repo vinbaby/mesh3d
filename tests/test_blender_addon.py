@@ -52,6 +52,20 @@ def test_procedural_shape_generators_are_present() -> None:
     assert "random.Random(settings.seed)" in source
 
 
+def test_separate_components_and_noise_scatter_are_available() -> None:
+    source = _addon_source()
+    assert 'name="Auto Separate Components"' in source
+    assert "def _separate_loose_parts" in source
+    assert 'bpy.ops.mesh.separate(type="LOOSE")' in source
+    assert "class VINLAB_OT_separate_loose_parts" in source
+    assert "class VINLAB_OT_build_field_scatter" in source
+    assert "def _build_field_scatter_group" in source
+    assert "ShaderNodeTexNoise" in source
+    assert "ShaderNodeValToRGB" in source
+    assert "GeometryNodeDistributePointsOnFaces" in source
+    assert "Noise Texture" in source and "Color Ramp" in source
+
+
 def test_scifi_scene_builder_creates_environment_assets() -> None:
     source = _addon_source()
     assert "class VINLAB_OT_generate_scifi_scene" in source
