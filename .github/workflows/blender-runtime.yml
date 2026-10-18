@@ -1,0 +1,26 @@
+name: Blender Runtime Smoke Test
+
+on:
+  push:
+    paths:
+      - "blender_addon/**"
+      - "tests/blender_runtime_smoke.py"
+      - ".github/workflows/blender-runtime.yml"
+  pull_request:
+    paths:
+      - "blender_addon/**"
+      - "tests/blender_runtime_smoke.py"
+      - ".github/workflows/blender-runtime.yml"
+
+jobs:
+  blender-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+      - name: Run add-on in background Blender
+        run: blender --background --factory-startup --python tests/blender_runtime_smoke.py
