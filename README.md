@@ -1,30 +1,25 @@
-# VIN 3D Studio — Clean Start
+# VIN 3D Studio — Reference Frame
 
-The current prototype is a small Python/PySide6 desktop app. Updates are provided incrementally; there is no need to reinstall the project for each UI change.
+The desktop application is a Python/PySide6 app. Updates are incremental; do not reinstall the whole project for each UI change.
 
-## Apply update v0.1.3 (startup fix)
+## Apply update v0.1.4
 1. Close VIN 3D Studio.
-2. Download `UPDATE_TO_V0.1.3.bat` from this repository.
-3. Place it next to `run_windows.bat` in the existing Studio folder.
-4. Run the updater. It downloads only the versioned `app/main.py` payload, creates a backup, and checks Python syntax. If the check fails, it attempts to restore the previous file.
-5. Run `run_windows.bat` to verify startup.
+2. Download `UPDATE_TO_V0.1.4.bat` from this repository.
+3. Put it next to `run_windows.bat` in the folder where the Studio is already installed.
+4. Run the updater. It downloads only the versioned `app/main.py` payload, backs up the current file, and runs a Python syntax check. If the check fails, it attempts to restore the previous file.
+5. Run `run_windows.bat` again.
 
-No dependency reinstall is required.
+No API keys or dependency reinstall are required for this update.
 
-## v0.1.3 — Startup fix
-- Fixes the crash `StudioWindow object has no attribute 'viewport'` by connecting the Fit Image button only after the viewport has been created.
+## v0.1.4 — Automatic wireframe guide
+- Importing an image automatically attempts foreground extraction using transparency or a locally estimated border background.
+- The app samples the detected silhouette and draws a triangular 2D wireframe guide over the image.
+- A button can rerun detection.
+- Manual drawing remains optional.
+- Undo/clear/save include automatically generated wireframe edges.
+- The frame can be saved as JSON in normalized image coordinates.
 
-## Apply update v0.1.2 (reference drawing)
-The manual frame drawing feature is already in v0.1.3. Existing installations should use v0.1.3 rather than v0.1.2.
+## Important limitation
+This creates a **2D wireframe guide overlay on the reference image**, not a true 3D reconstruction. It uses local segmentation and grid sampling; it does not use an AI model, API, or infer the hidden back side / body depth. A transparent-background image or a clear subject on a plain background works best. If it cannot isolate the main object, the app reports that and leaves manual drawing available.
 
-## v0.1.2 — Reference frame drawing
-- Import a reference image and show it flat in the viewport
-- Toggle manual frame drawing
-- Left-click and drag to trace strokes/edges directly on the image
-- Undo the last stroke or clear the frame
-- Adjust line width and zoom the image for closer tracing
-- Save stroke points as JSON in normalized image coordinates
-- Smoke tests cover syntax and the presence of the new workflow
-
-## Important scope
-The app records **2D guide strokes over the reference image**. It does not create a complete 3D model automatically and does not require an AI API. This stage is for manually constructing visual frame guides; the next step can turn these guides into editable mesh vertices and edges, then connect them to a 3D workflow.
+The next stage is to make detected points and edges editable, then design how those guides should be projected into an actual 3D mesh. Rigging, weight paint, animation and AI 3D generation are out of scope for this update.
