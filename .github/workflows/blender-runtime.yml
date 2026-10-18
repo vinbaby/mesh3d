@@ -23,4 +23,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y blender
       - name: Run add-on in background Blender
-        run: blender --background --factory-startup --python tests/blender_runtime_smoke.py
+        shell: bash
+        run: |
+          set -o pipefail
+          blender --background --factory-startup --python tests/blender_runtime_smoke.py 2>&1 | tee blender-runtime.log
+          grep -q "VIN Procedural Lab Blender runtime smoke test passed." blender-runtime.log
