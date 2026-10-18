@@ -894,7 +894,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
 
         obj["vinlab_shape_type"] = shape_type
         obj["vinlab_seed"] = settings.seed
-        obj["vinlab_version"] = "0.2.0"
+        obj["vinlab_version"] = "0.3.0"
         self.report(
             {"INFO"},
             f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
