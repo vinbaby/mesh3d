@@ -1,50 +1,48 @@
-# VIN Procedural Lab — Blender Add-on v0.2.0
+# VIN Procedural Lab — Blender Add-on v0.3.0
 
-This is a separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
+A separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
 ## Modules
 
 ### 1. Procedural Shape Generator
-Creates real editable Blender mesh objects using deterministic math and seeded randomness:
+Creates real editable Blender mesh objects using seeded procedural geometry:
 - Random Shape
 - Twisted Column
 - Orbital Cage
 - Organic Blob
 - Crystal Cluster
 - Branching Form
+- Future Sculpture
 
-Controls: seed, detail, size, twist, and branch depth. Use the same seed and settings to reproduce a shape; choose **New Variant** to change the seed.
+Controls include Seed, Detail, Size, Twist, and Branch Depth. A seed and matching settings reproduce a result; **New Variant** changes the seed.
 
-### 2. Animation Builder
-Builds an editable Geometry Nodes node group and adds it as a Geometry Nodes modifier to the active object:
+### 2. Sci-Fi Scene Builder
+Creates a whole editable environment rather than a single prop:
+- A layered reactor plaza with radial runway markers
+- A hero core tower, side wings, and randomized perimeter stations
+- Hard-surface armor shells, panel recesses, vents, seams, rooftop antennae, and beacons
+- Amber and cyan emissive trims, orbital rails, and an elevated connector bridge
+- A generated camera and three area lights
+
+Use **Generate Scene** to build from the current Seed or **Random Scene** to increment the Seed and build a different arrangement. Generated assets are grouped in a named collection. You can edit individual meshes and materials normally in Blender. This is procedural hard-surface blockout art direction, not a one-click guarantee of a polished final render.
+
+### 3. Animation Builder
+Builds an editable Geometry Nodes group and adds it as a modifier to the active object:
 - **Bob / Float** — Scene Time drives a sine wave connected to Set Position offset
 - **Continuous Spin** — Scene Time drives Transform Geometry rotation
 - **Scale Pulse** — Scene Time drives a uniform scale pulse
 - **Animated Twist** — position fields and trigonometric nodes twist points around Z over time
 
-The generated groups remain editable in Blender's Geometry Node Editor. Speed and mode-relevant amount controls are exposed on the modifier.
+Generated groups remain editable in Blender's Geometry Node Editor. Preview motion by playing the timeline.
 
-## Install
-1. Download `vin_procedural_lab.py` from this folder using GitHub's **Download raw file** action.
-2. Open Blender and go to **Edit → Preferences → Add-ons** (wording may vary by Blender version).
-3. Choose **Install from Disk**, select the downloaded `.py` file, then enable **VIN Procedural Lab**.
-4. In the 3D Viewport, press **N** to open the sidebar and choose the **VIN Lab** tab.
+## Install / update
+1. Download the vin_procedural_lab.py file from this folder using GitHub's **Download raw file** action.
+2. In Blender, go to **Edit → Preferences → Add-ons** (wording can vary by version), choose **Install from Disk**, select the .py file, then enable **VIN Procedural Lab**.
+3. In the 3D Viewport, press **N** and open the **VIN Lab** tab.
+4. For an existing install, disable/remove the older add-on version before installing this file to avoid duplicate panel/operator registrations. This does not change the separate VIN 3D Studio desktop app.
 
-## Use
-1. In **Procedural Shape Generator**, choose a family or leave Random Shape selected, adjust parameters, and click **Generate Shape**.
-2. Select the generated object (or any supported object) that should animate.
-3. In **Animation Builder**, choose the motion, adjust Speed and the relevant Amount, then click **Build Geometry Nodes**.
-4. Open the Geometry Node Editor to inspect and further edit the generated graph. Use the timeline/play controls to see the animation.
-
-## Notes and limitations
-- Shapes are algorithmic procedural geometry, not AI-generated interpretations of a prompt.
-- Animation uses Scene Time, so preview it by playing the timeline.
-- Version 0.2.0 includes six shape families and four animation templates. It does not promise production-ready topology for every downstream use.
-- CI compiles the add-on and executes its mesh and Geometry Nodes builders in background Blender. Interactive GUI drawing and visual art-direction should still be checked in the user's Blender session.
-- Requires Blender 3.6 or newer in principle; Geometry Nodes interface APIs vary across Blender versions, so report the exact Blender version if runtime node creation fails.
-
-
-## Update to v0.2.0
-The generator adds **Future Sculpture**, intended for abstract sci-fi / contemporary sculptural forms inspired by twisted, intersecting loops and tubular structures. It uses deterministic procedural geometry; changing the Seed creates different arrangements.
-
-To update an existing install, disable/uninstall the older VIN Procedural Lab version first, then install the updated `vin_procedural_lab.py` from disk and re-enable it. This avoids duplicate panel/operator registrations. It does not change or remove the separate VIN 3D Studio desktop app.
+## Notes
+- Shapes and scenes are generated by deterministic algorithms, not by an AI image-generation API.
+- Scene assets are editable Blender objects with procedural materials, modifiers, lighting, and a camera.
+- CI compiles the add-on and executes its shape, scene, and Geometry Nodes builders in background Blender. Interactive layout and visual art direction should still be checked in the user's Blender session.
+- The add-on targets Blender 3.6+; Geometry Nodes APIs can vary between releases. Report the exact Blender version if node creation fails.
