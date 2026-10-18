@@ -21,7 +21,7 @@ from bpy.props import (
 
 
 SHAPE_ITEMS = [
-    ("RANDOM", "Random Shape", "Pick a shape family from the current seed"),
+    ("RANDOM", "Random Object", "Randomly choose an individual procedural artifact family"),
     ("TWISTED_COLUMN", "Twisted Column", "A twisted, ring-based parametric solid"),
     ("ORBIT_CAGE", "Orbital Cage", "Intersecting tubular orbit loops"),
     ("ORGANIC_BLOB", "Organic Blob", "A deformed UV-like closed surface"),
