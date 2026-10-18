@@ -6,6 +6,8 @@ on:
       - "app/**"
       - "tests/**"
       - "pyproject.toml"
+      - "updates/**"
+      - "UPDATE_TO_*.bat"
       - ".github/workflows/smoke.yml"
   pull_request:
     paths:
