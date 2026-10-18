@@ -97,10 +97,12 @@ class MeshViewport(QWidget):
             blue = max(0, min(255, int((c0[2] + c1[2] + c2[2]) / 3 * depth_shade)))
             if self.wireframe:
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.setPen(QPen(QColor(120, 226, 178, 130), 0.45))
+                painter.setPen(QPen(QColor(120, 226, 178, 170), 0.55))
             else:
                 painter.setBrush(QColor(red, green, blue))
-                painter.setPen(QPen(QColor(12, 17, 23, 55), 0.35))
+                # No edge pen in solid mode; outlining every triangle made a
+                # dense wire grid appear even when Wireframe was switched off.
+                painter.setPen(QPen(Qt.PenStyle.NoPen))
             painter.drawPolygon(polygon)
         painter.end()
 
@@ -328,49 +330,55 @@ class StudioWindow(QMainWindow):
     def build_mesh(self) -> None:
         if self.image is None:
             return
-        n = int(self.res_combo.currentData())
-        # Sample to a square canvas while preserving the image aspect ratio.
-        sample = QImage(n, n, QImage.Format.Format_RGB32)
-        sample.fill(QColor(119, 119, 119))
-        scaled = self.image.scaled(
-            n, n, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-        )
-        from PySide6.QtGui import QPainter as ImagePainter
+        # Treat the chosen resolution as the longest edge, not as a square
+        # canvas. This avoids adding gray mesh strips above/below wide images.
+        longest = int(self.res_combo.currentData())
+        aspect = self.image.width() / max(1, self.image.height())
+        if aspect >= 1.0:
+            cols = longest
+            rows = max(8, round(longest / aspect))
+        else:
+            rows = longest
+            cols = max(8, round(longest * aspect))
 
-        ip = ImagePainter(sample)
-        ip.drawImage((n - scaled.width()) // 2, (n - scaled.height()) // 2, scaled)
-        ip.end()
+        sample = self.image.scaled(
+            cols, rows, Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ).convertToFormat(QImage.Format.Format_RGB32)
 
         depth = self.depth_slider.value() / 100.0
         vertices: list[tuple[float, float, float]] = []
         colors: list[tuple[int, int, int]] = []
-        for y in range(n):
-            for x in range(n):
+        unit = 2.0 / max(1, max(cols - 1, rows - 1))
+        for y in range(rows):
+            for x in range(cols):
                 color = sample.pixelColor(x, y)
                 luminance = (
                     0.2126 * color.red() + 0.7152 * color.green() + 0.0722 * color.blue()
                 ) / 255.0
                 vertices.append(
-                    ((x / (n - 1) - 0.5) * 2.0, (0.5 - y / (n - 1)) * 2.0,
+                    ((x - (cols - 1) / 2.0) * unit,
+                     ((rows - 1) / 2.0 - y) * unit,
                      (luminance - 0.5) * depth)
                 )
                 colors.append((color.red(), color.green(), color.blue()))
 
         triangles: list[tuple[int, int, int]] = []
-        for y in range(n - 1):
-            for x in range(n - 1):
-                a = y * n + x
+        for y in range(rows - 1):
+            for x in range(cols - 1):
+                a = y * cols + x
                 b = a + 1
-                c = a + n
+                c = a + cols
                 d = c + 1
                 triangles.append((a, c, b))
                 triangles.append((b, c, d))
 
-        mesh = ReliefMesh(n, vertices, colors, triangles)
+        mesh = ReliefMesh(longest, vertices, colors, triangles)
         self.viewport.set_mesh(mesh)
         self.mode_value.setText("Relief preview")
         self.statusBar().showMessage(
-            f"Preview generated · {len(vertices):,} vertices · {len(triangles):,} triangles"
+            f"Relief preview · {cols} × {rows} · {len(vertices):,} vertices · "
+            f"{len(triangles):,} triangles"
         )
 
     def _depth_changed(self, value: int) -> None:
