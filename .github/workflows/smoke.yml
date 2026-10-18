@@ -13,6 +13,7 @@ on:
   pull_request:
     paths:
       - "app/**"
+      - "blender_addon/**"
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/smoke.yml"
