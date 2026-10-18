@@ -323,8 +323,9 @@ def _new_mesh_object(context, name, vertices, faces, seed):
     )
     mesh.materials.append(material)
     obj.color = material.diffuse_color
+    smooth_surface = any(token in name for token in ("Organic Blob", "Orbital Cage", "Branching Form"))
     for polygon in mesh.polygons:
-        polygon.use_smooth = False
+        polygon.use_smooth = smooth_surface
 
     for other in context.selected_objects:
         other.select_set(False)
@@ -371,9 +372,6 @@ def _build_animation_group(settings, animation_type):
     tree = bpy.data.node_groups.new(
         name=f"VINLAB · {friendly}", type="GeometryNodeTree"
     )
-    if hasattr(tree, "is_modifier"):
-        tree.is_modifier = True
-
     geo_in = _add_interface_socket(tree, "Geometry", "INPUT", "NodeSocketGeometry")
     speed_socket = _add_interface_socket(
         tree, "Speed", "INPUT", "NodeSocketFloat",
