@@ -34,7 +34,7 @@ class ReliefMesh:
 
 
 class MeshViewport(QWidget):
-    """2D reference-image viewport with manually drawn frame strokes."""
+    """2D reference-image viewport with automatically generated and manual frame lines."""
 
     frame_changed = Signal(int, int)
 
@@ -46,6 +46,7 @@ class MeshViewport(QWidget):
         # Stroke points are normalized to the image rectangle (0..1), so the
         # overlay remains attached to the reference if the viewport is resized.
         self.frame_strokes: list[list[QPointF]] = []
+        self.auto_edges: list[tuple[QPointF, QPointF]] = []
         self._active_stroke: list[QPointF] | None = None
         self.draw_mode = False
         self.line_width = 2.0
@@ -55,9 +56,15 @@ class MeshViewport(QWidget):
     def set_reference_image(self, image: QImage | None) -> None:
         self.reference_image = image
         self.frame_strokes.clear()
+        self.auto_edges.clear()
         self._active_stroke = None
         self.image_zoom = 1.0
         self.frame_changed.emit(0, 0)
+        self.update()
+
+    def set_auto_edges(self, edges: list[tuple[QPointF, QPointF]]) -> None:
+        self.auto_edges = edges
+        self._emit_frame_changed()
         self.update()
 
     def set_draw_mode(self, enabled: bool) -> None:
@@ -70,11 +77,14 @@ class MeshViewport(QWidget):
             self._active_stroke = None
         elif self.frame_strokes:
             self.frame_strokes.pop()
+        elif self.auto_edges:
+            self.auto_edges.clear()
         self._emit_frame_changed()
         self.update()
 
     def clear_frame(self) -> None:
         self.frame_strokes.clear()
+        self.auto_edges.clear()
         self._active_stroke = None
         self._emit_frame_changed()
         self.update()
@@ -109,7 +119,9 @@ class MeshViewport(QWidget):
         strokes = list(self.frame_strokes)
         if self._active_stroke:
             strokes.append(self._active_stroke)
-        self.frame_changed.emit(len(strokes), sum(len(stroke) for stroke in strokes))
+        manual_points = sum(len(stroke) for stroke in strokes)
+        self.frame_changed.emit(len(strokes) + len(self.auto_edges),
+                                manual_points + 2 * len(self.auto_edges))
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -130,10 +142,18 @@ class MeshViewport(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(image_rect)
 
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Automatically generated silhouette grid: draw every mesh edge with no
+        # vertex dots, so import can reveal a wireframe without hand tracing.
+        if self.auto_edges:
+            painter.setPen(QPen(QColor("#77efb9"), max(0.8, self.line_width * 0.65),
+                                Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            for first, second in self.auto_edges:
+                painter.drawLine(self._to_view(first), self._to_view(second))
+
         all_strokes = list(self.frame_strokes)
         if self._active_stroke:
             all_strokes.append(self._active_stroke)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
         for stroke in all_strokes:
             view_points = [self._to_view(point) for point in stroke]
             if len(view_points) >= 2:
@@ -271,8 +291,15 @@ class StudioWindow(QMainWindow):
         left_layout.addWidget(self.file_label)
 
         left_layout.addSpacing(10)
-        left_layout.addWidget(self._section("FRAME DRAWING"))
-        self.draw_button = QPushButton("Draw frame: OFF")
+        left_layout.addWidget(self._section("AUTOMATIC FRAME"))
+        self.auto_button = QPushButton("Auto-generate wireframe")
+        self.auto_button.setObjectName("primary")
+        self.auto_button.setEnabled(False)
+        self.auto_button.clicked.connect(self.auto_detect_frame)
+        left_layout.addWidget(self.auto_button)
+
+        left_layout.addWidget(self._section("OPTIONAL MANUAL EDITING"))
+        self.draw_button = QPushButton("Draw frame manually: OFF")
         self.draw_button.setCheckable(True)
         self.draw_button.setEnabled(False)
         self.draw_button.toggled.connect(self._draw_mode_toggled)
@@ -307,9 +334,9 @@ class StudioWindow(QMainWindow):
         left_layout.addWidget(fit_button)
 
         note = QLabel(
-            "Turn on Draw frame, then left-click and drag to draw strokes over the reference. "
-            "Mouse wheel zooms the image. This tool records 2D guide strokes; it does not "
-            "generate a 3D model automatically."
+            "On import, the Studio attempts to find the main foreground object and automatically "
+            "draw a triangular guide grid over it. Manual drawing is optional. This is a 2D "
+            "reference overlay, not a finished 3D model."
         )
         note.setObjectName("muted")
         note.setWordWrap(True)
@@ -330,9 +357,9 @@ class StudioWindow(QMainWindow):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(16, 16, 16, 16)
         right_layout.setSpacing(8)
-        right_layout.addWidget(self._section("REFERENCE"))
+        right_layout.addWidget(self._section("REFERENCE / WIREFRAME"))
         self.object_value = self._stat(right_layout, "Active image", "None")
-        self.strokes_value = self._stat(right_layout, "Strokes", "0")
+        self.strokes_value = self._stat(right_layout, "Frame lines", "0")
         self.points_value = self._stat(right_layout, "Frame points", "0")
         self.mode_value = self._stat(right_layout, "Mode", "Image view")
         right_layout.addSpacing(14)
@@ -340,7 +367,7 @@ class StudioWindow(QMainWindow):
         right_layout.addWidget(QLabel("1. Import image\n2. Enable Draw frame\n3. Trace contours / edges\n4. Undo or clear as needed\n5. Save frame JSON"))
         right_layout.addSpacing(14)
         right_layout.addWidget(self._section("NEXT STEP"))
-        export_note = QLabel("Next: turn the drawn guides into editable vertices and edges for a real mesh workflow.")
+        export_note = QLabel("Next: improve silhouette detection and turn the 2D grid into an editable mesh.")
         export_note.setObjectName("muted")
         export_note.setWordWrap(True)
         right_layout.addWidget(export_note)
@@ -382,12 +409,203 @@ class StudioWindow(QMainWindow):
         self.viewport.set_reference_image(self.image)
         self.draw_button.setEnabled(True)
         self.draw_button.setChecked(False)
-        # Undo, clear and save stay disabled until at least one stroke exists.
+        self.auto_button.setEnabled(True)
         self.undo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
         self.save_button.setEnabled(False)
-        self.mode_value.setText("Image view")
-        self.statusBar().showMessage("Image loaded · Enable Draw frame to trace lines")
+        self.mode_value.setText("Analyzing image")
+        # Automatic frame detection is the default flow: user only imports image.
+        self.auto_detect_frame(silent=True)
+
+    def auto_detect_frame(self, checked: bool = False, silent: bool = False) -> None:
+        """Create a flat triangular wireframe overlay from a locally segmented silhouette."""
+        if self.image is None:
+            return
+
+        # Work on a small proxy image: fast enough on CPU and enough detail for a guide.
+        max_side = 320
+        aspect = self.image.width() / max(1, self.image.height())
+        if aspect >= 1.0:
+            sample_w = max_side
+            sample_h = max(24, round(max_side / aspect))
+        else:
+            sample_h = max_side
+            sample_w = max(24, round(max_side * aspect))
+        sample = self.image.scaled(
+            sample_w, sample_h, Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ).convertToFormat(QImage.Format.Format_ARGB32)
+
+        pixels: list[tuple[int, int, int, int]] = []
+        border: list[tuple[int, int, int]] = []
+        for y in range(sample_h):
+            for x in range(sample_w):
+                c = sample.pixelColor(x, y)
+                rgba = (c.red(), c.green(), c.blue(), c.alpha())
+                pixels.append(rgba)
+                if x == 0 or y == 0 or x == sample_w - 1 or y == sample_h - 1:
+                    border.append(rgba[:3])
+
+        total = sample_w * sample_h
+        transparent_count = sum(1 for r, g, b, a in pixels if a < 245)
+        if transparent_count > total * 0.01:
+            mask = [a > 18 for r, g, b, a in pixels]
+        else:
+            # Assume a reasonably uniform background. Estimate its color from
+            # the border and flood-fill only matching pixels connected to it.
+            bg_r = sorted(c[0] for c in border)[len(border) // 2]
+            bg_g = sorted(c[1] for c in border)[len(border) // 2]
+            bg_b = sorted(c[2] for c in border)[len(border) // 2]
+            candidate = []
+            tolerance_sq = 68.0 * 68.0
+            for r, g, b, a in pixels:
+                distance_sq = (r - bg_r) ** 2 + (g - bg_g) ** 2 + (b - bg_b) ** 2
+                candidate.append(distance_sq <= tolerance_sq)
+            background = bytearray(total)
+            queue = deque()
+
+            def enqueue_background(index: int) -> None:
+                if candidate[index] and not background[index]:
+                    background[index] = 1
+                    queue.append(index)
+
+            for x in range(sample_w):
+                enqueue_background(x)
+                enqueue_background((sample_h - 1) * sample_w + x)
+            for y in range(sample_h):
+                enqueue_background(y * sample_w)
+                enqueue_background(y * sample_w + sample_w - 1)
+            while queue:
+                index = queue.popleft()
+                x, y = index % sample_w, index // sample_w
+                if x > 0:
+                    enqueue_background(index - 1)
+                if x + 1 < sample_w:
+                    enqueue_background(index + 1)
+                if y > 0:
+                    enqueue_background(index - sample_w)
+                if y + 1 < sample_h:
+                    enqueue_background(index + sample_w)
+            mask = [not bool(v) for v in background]
+
+        # Keep the largest connected foreground component to ignore detached
+        # overlays/logos when the main character is the dominant object.
+        seen = bytearray(total)
+        largest_component: list[int] = []
+        for seed, inside in enumerate(mask):
+            if not inside or seen[seed]:
+                continue
+            seen[seed] = 1
+            queue = deque([seed])
+            component = []
+            while queue:
+                idx = queue.popleft()
+                component.append(idx)
+                x, y = idx % sample_w, idx // sample_w
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if not (0 <= nx < sample_w and 0 <= ny < sample_h):
+                            continue
+                        ni = ny * sample_w + nx
+                        if mask[ni] and not seen[ni]:
+                            seen[ni] = 1
+                            queue.append(ni)
+            if len(component) > len(largest_component):
+                largest_component = component
+
+        if len(largest_component) < max(25, int(total * 0.01)) or len(largest_component) > int(total * 0.92):
+            self.viewport.set_auto_edges([])
+            self.update_frame_stats(0, 0)
+            if not silent:
+                QMessageBox.information(
+                    self, "Could not isolate an object",
+                    "Automatic frame detection works best when the character/object is clearly "
+                    "separated from a plain or transparent background. Try a clearer image, "
+                    "or use the optional manual drawing tool."
+                )
+            self.mode_value.setText("Detection needs clean background")
+            self.statusBar().showMessage(
+                "Image loaded · Could not isolate a clear foreground; manual drawing is available"
+            )
+            return
+
+        foreground = bytearray(total)
+        for index in largest_component:
+            foreground[index] = 1
+
+        # Regularly sample points only where the object mask exists. Add edges
+        # and diagonals inside occupied cells, producing an automatic triangle
+        # guide that resembles a wireframe and follows the detected outline.
+        step = max(3, round(max(sample_w, sample_h) / 64))
+        xs = list(range(0, sample_w, step))
+        ys = list(range(0, sample_h, step))
+        if xs[-1] != sample_w - 1:
+            xs.append(sample_w - 1)
+        if ys[-1] != sample_h - 1:
+            ys.append(sample_h - 1)
+
+        nodes: dict[tuple[int, int], QPointF] = {}
+        grid_ids: dict[tuple[int, int], int] = {}
+        for gy, y in enumerate(ys):
+            for gx, x in enumerate(xs):
+                if foreground[y * sample_w + x]:
+                    grid_ids[(gx, gy)] = len(nodes)
+                    nodes[(gx, gy)] = QPointF(x / max(1, sample_w - 1),
+                                             y / max(1, sample_h - 1))
+
+        edge_ids: set[tuple[int, int]] = set()
+
+        def add_edge(a: tuple[int, int], b: tuple[int, int]) -> None:
+            if a not in grid_ids or b not in grid_ids:
+                return
+            ia, ib = grid_ids[a], grid_ids[b]
+            if ia != ib:
+                edge_ids.add((min(ia, ib), max(ia, ib)))
+
+        for gy in range(len(ys)):
+            for gx in range(len(xs)):
+                here = (gx, gy)
+                add_edge(here, (gx + 1, gy))
+                add_edge(here, (gx, gy + 1))
+
+        for gy in range(len(ys) - 1):
+            for gx in range(len(xs) - 1):
+                tl = (gx, gy)
+                tr = (gx + 1, gy)
+                bl = (gx, gy + 1)
+                br = (gx + 1, gy + 1)
+                valid = [point for point in (tl, tr, bl, br) if point in grid_ids]
+                if len(valid) >= 3:
+                    if tl in grid_ids and br in grid_ids:
+                        add_edge(tl, br)
+                    elif tr in grid_ids and bl in grid_ids:
+                        add_edge(tr, bl)
+
+        ordered_ids = sorted(edge_ids)
+        auto_edges = [
+            (nodes[next(key for key, value in grid_ids.items() if value == a)],
+             nodes[next(key for key, value in grid_ids.items() if value == b)])
+            for a, b in ordered_ids
+        ]
+        if len(auto_edges) < 20:
+            if not silent:
+                QMessageBox.information(
+                    self, "Frame too small",
+                    "The object was detected, but not enough frame edges were found. "
+                    "Try a larger reference image or use manual drawing."
+                )
+            self.statusBar().showMessage("Frame detection produced too few edges")
+            return
+
+        self.viewport.set_auto_edges(auto_edges)
+        self.mode_value.setText("Auto wireframe overlay")
+        self.statusBar().showMessage(
+            f"Auto wireframe created · {len(auto_edges):,} lines · "
+            f"{sample_w} × {sample_h} analysis"
+        )
 
     def _draw_mode_toggled(self, enabled: bool) -> None:
         self.viewport.set_draw_mode(enabled)
@@ -443,7 +661,13 @@ class StudioWindow(QMainWindow):
             return
         data = {
             "format": "vin-3d-studio-reference-frame",
-            "version": 1,
+            "version": 2,
+            "generation_method": "local silhouette mask and grid sampling",
+            "wireframe_edges": [
+                [{"u": round(a.x(), 6), "v": round(a.y(), 6)},
+                 {"u": round(b.x(), 6), "v": round(b.y(), 6)}]
+                for a, b in self.viewport.auto_edges
+            ],
             "source_image": self.image_path.name if self.image_path else None,
             "image_size": [self.image.width(), self.image.height()] if self.image else None,
             "coordinate_space": "normalized_image_0_to_1",
@@ -466,6 +690,7 @@ class StudioWindow(QMainWindow):
         self.file_label.setText("No image selected")
         self.draw_button.setChecked(False)
         self.draw_button.setEnabled(False)
+        self.auto_button.setEnabled(False)
         self.undo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
         self.save_button.setEnabled(False)
