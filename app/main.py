@@ -304,7 +304,6 @@ class StudioWindow(QMainWindow):
         self.save_button.clicked.connect(self.save_frame)
         left_layout.addWidget(self.save_button)
         fit_button = QPushButton("Fit image")
-        fit_button.clicked.connect(self.viewport.fit_image)
         left_layout.addWidget(fit_button)
 
         note = QLabel(
@@ -320,6 +319,7 @@ class StudioWindow(QMainWindow):
         body.addWidget(left)
 
         self.viewport = MeshViewport()
+        fit_button.clicked.connect(self.viewport.fit_image)
         self.viewport.setStyleSheet("background:#282e37;")
         self.viewport.frame_changed.connect(self.update_frame_stats)
         body.addWidget(self.viewport, 1)
