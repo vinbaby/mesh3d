@@ -1,23 +1,24 @@
 # VIN 3D Studio — Clean Start
 
-This repository currently contains the first small desktop prototype for rebuilding VIN 3D Studio.
+The current prototype is a small Python/PySide6 desktop app. The v0.1.1 change is delivered as an **incremental update**, not a reinstall.
 
-## Run on Windows
-1. Install Python 3.10 or newer.
-2. Run `install_windows.bat` to create the virtual environment and install dependencies from `pyproject.toml`.
-3. Run `run_windows.bat`.
+## Apply update v0.1.1
+1. Close VIN 3D Studio.
+2. Download `UPDATE_TO_V0.1.1.bat` from this repository.
+3. Put the updater next to `run_windows.bat` in the existing Studio folder.
+4. Run the updater. It downloads only the versioned `app/main.py` payload, saves a backup, and checks Python syntax. If the check fails, it restores the previous file.
+5. Run `run_windows.bat` to test the app.
 
-The desktop entry point is `app/main.py`.
+No dependency reinstall is required for this update.
 
-## Phase 1 includes
-- A simple dark Studio window with side panels
-- Load PNG, JPG, or WebP reference images
-- A rotatable and zoomable viewport
-- A brightness-based 2.5D relief mesh preview
-- Adjustable relief depth and a conservative mesh resolution range
-- Vertex/triangle counters and a wireframe toggle
+## v0.1.1 changes
+- Foreground extraction using border-connected background flood fill for plain-background images
+- Surface mesh follows the detected silhouette rather than filling the whole rectangular image
+- Front and back surfaces with side walls create an extruded silhouette mesh
+- Wireframe edges appear only when Wireframe is enabled
+- Keeps the current Studio shell, image loader, viewport controls, resolution selector and stats
 
 ## Important limitation
-This is a basic relief-mesh prototype, **not** AI image-to-complete-3D generation. It does not infer hidden geometry or a character's back side. The goal of this phase is to validate the app shell and keep viewport interactions responsive before integrating a real image-to-3D backend.
+This is silhouette-based 2.5D extrusion, **not** AI generation of a fully shaped character. It preserves the source image's colors on the front surface but does not infer face depth, body volume, unseen anatomy or the character's back side. Plain-background reference images work best. Full image-to-3D generation and GLB export are separate future steps.
 
-Rigging, weight paint, animation, and GLB export are not included in this clean-start phase.
+Rigging, weight paint, and animation remain out of scope for this clean-start phase.
