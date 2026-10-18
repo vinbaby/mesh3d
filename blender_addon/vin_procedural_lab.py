@@ -32,6 +32,11 @@ SHAPE_ITEMS = [
     ("FOLDED_RIBBON", "Folded Ribbon", "A broad twisting metallic ribbon with a sharp sculptural silhouette"),
     ("PRISM_REACTOR", "Prism Reactor", "An angular reactor core inside intersecting open frames"),
     ("FACETED_TOTEM", "Faceted Totem", "Layered polygonal plates, facets, fins and micro-ribs"),
+    ("HEX_ARMOR", "Hex Armor", "A raised honeycomb armor shield with deep dark seams"),
+    ("CIRCUIT_CORE", "Circuit Core", "A layered electronic reactor plate with physical circuit traces"),
+    ("ORBITAL_PARTICLE", "Orbital Particle", "A crescent cloud of metallic pearls linked by filaments"),
+    ("CELLULAR_VOID", "Cellular Void", "A porous organic-metal exoskeleton with irregular holes"),
+    ("SPIKE_BLOOM", "Spike Bloom", "A dark orb with randomly tapered mechanical spines"),
 ]
 
 ANIMATION_ITEMS = [
@@ -53,6 +58,11 @@ SHAPE_NAMES = {
     "FOLDED_RIBBON": "Folded Ribbon",
     "PRISM_REACTOR": "Prism Reactor",
     "FACETED_TOTEM": "Faceted Totem",
+    "HEX_ARMOR": "Hex Armor",
+    "CIRCUIT_CORE": "Circuit Core",
+    "ORBITAL_PARTICLE": "Orbital Particle",
+    "CELLULAR_VOID": "Cellular Void",
+    "SPIKE_BLOOM": "Spike Bloom",
 }
 
 
@@ -747,6 +757,326 @@ def _build_faceted_totem(settings, rng):
     return vertices, faces
 
 
+def _append_uv_sphere(vertices, faces, center, radius, segments=9, rings=6):
+    """Append a low-poly UV sphere; return the face-index range for material tagging."""
+    face_start = len(faces)
+    cx, cy, cz = center
+    top = len(vertices)
+    vertices.append((cx, cy, cz + radius))
+    for row in range(1, rings):
+        theta = math.pi * row / rings
+        for col in range(segments):
+            phi = math.tau * col / segments
+            vertices.append((
+                cx + radius * math.sin(theta) * math.cos(phi),
+                cy + radius * math.sin(theta) * math.sin(phi),
+                cz + radius * math.cos(theta),
+            ))
+    bottom = len(vertices)
+    vertices.append((cx, cy, cz - radius))
+    first = top + 1
+    for col in range(segments):
+        faces.append((top, first + col, first + (col + 1) % segments))
+    for row in range(rings - 2):
+        upper = first + row * segments
+        lower = upper + segments
+        for col in range(segments):
+            nxt = (col + 1) % segments
+            faces.append((upper + col, lower + col, lower + nxt, upper + nxt))
+    last = first + (rings - 2) * segments
+    for col in range(segments):
+        faces.append((last + col, bottom, last + (col + 1) % segments))
+    return list(range(face_start, len(faces)))
+
+
+def _append_hex_tile(vertices, faces, center, radius, depth, phase=0.0):
+    """Add a six-sided raised armor tile, facing toward negative Y."""
+    face_start = len(faces)
+    cx, cy, cz = center
+    for y in (cy - depth * 0.5, cy + depth * 0.5):
+        for side in range(6):
+            angle = math.tau * side / 6 + phase
+            vertices.append((cx + radius * math.cos(angle), y, cz + radius * math.sin(angle)))
+    faces.append(tuple(face_start * 0 + len(vertices) - 12 + i for i in range(6)))
+    faces.append(tuple(len(vertices) - 6 + i for i in range(6)))
+    base_vertex = len(vertices) - 12
+    for side in range(6):
+        nxt = (side + 1) % 6
+        faces.append((base_vertex + side, base_vertex + nxt, base_vertex + 6 + nxt, base_vertex + 6 + side))
+    # First face is the dark gap/back edge; the second is the tile's reflective front.
+    return face_start, face_start + 1, list(range(face_start + 2, face_start + 8))
+
+
+def _append_horizontal_cylinder(vertices, faces, center, radius, depth, sides=48):
+    """Append a cylinder whose circular face lies in the XY plane."""
+    face_start = len(faces)
+    cx, cy, cz = center
+    for z in (cz - depth * 0.5, cz + depth * 0.5):
+        for side in range(sides):
+            angle = math.tau * side / sides
+            vertices.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle), z))
+    faces.append(tuple(face_start * 0 + len(vertices) - 2 * sides + i for i in range(sides - 1, -1, -1)))
+    faces.append(tuple(len(vertices) - sides + i for i in range(sides)))
+    base_vertex = len(vertices) - 2 * sides
+    for side in range(sides):
+        nxt = (side + 1) % sides
+        faces.append((base_vertex + side, base_vertex + nxt, base_vertex + sides + nxt, base_vertex + sides + side))
+    return list(range(face_start, len(faces)))
+
+
+def _append_cone_between(vertices, faces, start, end, radius, sides=7):
+    """Append a tapered mechanical spike between two points."""
+    face_start = len(faces)
+    a, b = Vector(start), Vector(end)
+    axis = b - a
+    if axis.length < 1e-6:
+        return []
+    axis.normalize()
+    helper = Vector((0.0, 0.0, 1.0))
+    if abs(axis.dot(helper)) > 0.92:
+        helper = Vector((1.0, 0.0, 0.0))
+    u = axis.cross(helper).normalized()
+    v = axis.cross(u).normalized()
+    base = len(vertices)
+    for i in range(sides):
+        angle = math.tau * i / sides
+        point = a + radius * (u * math.cos(angle) + v * math.sin(angle))
+        vertices.append(tuple(point))
+    tip = len(vertices)
+    vertices.append(tuple(b))
+    faces.append(tuple(base + i for i in range(sides - 1, -1, -1)))
+    for i in range(sides):
+        nxt = (i + 1) % sides
+        faces.append((base + i, base + nxt, tip))
+    return list(range(face_start, len(faces)))
+
+
+def _build_hex_armor(settings, rng):
+    """A curved sci-fi armor plaque with raised hex cells and dark recessed seams."""
+    vertices, faces = [], []
+    dark_faces, material_faces = [], []
+    unit = settings.size
+    width, height, backing_depth = unit * 1.58, unit * 1.18, unit * 0.16
+    _append_block(vertices, faces, (0.0, 0.0, 0.0), (width * 1.08, backing_depth, height * 1.08), 0.0)
+    rows = rng.randint(4, 6)
+    cols = rng.randint(6, 8)
+    radius = min(width / (1.5 * (cols - 1) + 2.15), height / (1.72 * (rows - 1) + 2.25))
+    step_x, step_z = 1.5 * radius, 1.72 * radius
+    left = -step_x * (cols - 1) * 0.5
+    bottom = -step_z * (rows - 1) * 0.5
+    for row in range(rows):
+        for col in range(cols):
+            x = left + col * step_x + (0.5 * step_x if row % 2 else 0.0)
+            z = bottom + row * step_z
+            if abs(x) > width * 0.49 or abs(z) > height * 0.47:
+                continue
+            bulge = 1.0 - 0.10 * (x / width) ** 2 - 0.12 * (z / height) ** 2
+            y = -backing_depth * 0.5 - radius * 0.08 * bulge
+            tile_radius = radius * rng.uniform(0.88, 0.98)
+            dark_idx, front_idx, side_indices = _append_hex_tile(
+                vertices, faces, (x, y, z), tile_radius, unit * rng.uniform(0.035, 0.065),
+                rng.uniform(-0.08, 0.08)
+            )
+            dark_faces.append(dark_idx)
+            material_faces.append((front_idx, rng.choices((1, 2, 3, 4), weights=(4, 3, 1, 2), k=1)[0]))
+            for idx in side_indices:
+                material_faces.append((idx, 0))
+    # Frame rails and two asymmetric mounting lugs.
+    rail = unit * 0.032
+    _append_block(vertices, faces, (0.0, -backing_depth * 0.58, height * 0.53),
+                  (width * 1.02, rail, rail), 0.0)
+    _append_block(vertices, faces, (0.0, -backing_depth * 0.58, -height * 0.53),
+                  (width * 1.02, rail, rail), 0.0)
+    for sign in (-1.0, 1.0):
+        _append_block(vertices, faces, (sign * width * 0.52, -backing_depth * 0.58, 0.0),
+                      (rail, rail, height * 1.03), rng.uniform(-0.03, 0.03))
+    for index in range(rng.randint(4, 7)):
+        x = rng.uniform(-width * 0.43, width * 0.43)
+        z = rng.choice((-1.0, 1.0)) * height * 0.54
+        _append_uv_sphere(vertices, faces, (x, -backing_depth * 0.78, z), unit * 0.018, 7, 4)
+        material_faces.extend((i, 4) for i in range(len(faces) - 14, len(faces)))
+    return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
+
+
+def _build_circuit_core(settings, rng):
+    """A round, multi-tier circuit device with stepped rims, grooves and radial traces."""
+    vertices, faces = [], []
+    dark_faces, material_faces = [], []
+    unit = settings.size
+    radius = unit * rng.uniform(0.48, 0.62)
+    depth = unit * rng.uniform(0.18, 0.26)
+    base_faces = _append_horizontal_cylinder(vertices, faces, (0, 0, -depth * 0.25), radius, depth, 64)
+    dark_faces.extend(base_faces[2:])
+    _append_horizontal_cylinder(vertices, faces, (0, 0, depth * 0.34), radius * 0.88, depth * 0.22, 64)
+    # Concentric raised tracks, one amber/cyan ring and two dark armor rails.
+    for ring_index, factor in enumerate((0.36, 0.49, 0.68, 0.82, 0.96)):
+        ring_radius = radius * factor
+        z = depth * (0.51 + 0.015 * (ring_index % 2))
+        points = [Vector((ring_radius * math.cos(math.tau * i / 128),
+                          ring_radius * math.sin(math.tau * i / 128), z)) for i in range(128)]
+        start_face = len(faces)
+        _append_tube(vertices, faces, points, unit * (0.013 if ring_index % 2 else 0.022),
+                     sides=7, closed=True, cap_ends=False)
+        ring_material = (3 if ring_index in (1, 4) else 2)
+        material_faces.extend((i, ring_material) for i in range(start_face, len(faces)))
+    # The raised central hub.
+    _append_horizontal_cylinder(vertices, faces, (0, 0, depth * 0.55), radius * 0.22, depth * 0.32, 40)
+    hub_faces = _append_uv_sphere(vertices, faces, (0, 0, depth * 0.83), radius * 0.14, 16, 8)
+    material_faces.extend((i, 3) for i in hub_faces)
+    # Circuit traces branch at right angles. Each route is geometry, not a painted texture.
+    for index in range(rng.randint(10, 15)):
+        angle = math.tau * index / rng.randint(10, 15)
+        r0 = radius * rng.uniform(0.38, 0.46)
+        r1 = radius * rng.uniform(0.56, 0.72)
+        r2 = radius * rng.uniform(0.75, 0.91)
+        p0 = Vector((r0 * math.cos(angle), r0 * math.sin(angle), depth * 0.57))
+        p1 = Vector((r1 * math.cos(angle), r1 * math.sin(angle), depth * 0.57))
+        turn = angle + rng.choice((-1, 1)) * math.pi * 0.5
+        p2 = Vector((p1.x + radius * 0.16 * math.cos(turn), p1.y + radius * 0.16 * math.sin(turn), depth * 0.57))
+        p3 = Vector((r2 * math.cos(turn), r2 * math.sin(turn), depth * 0.57))
+        start_face = len(faces)
+        _append_tube(vertices, faces, (p0, p1, p2, p3), unit * rng.uniform(0.007, 0.013),
+                     sides=5, closed=False, cap_ends=True)
+        material_faces.extend((i, 3 if index % 4 == 0 else 2) for i in range(start_face, len(faces)))
+        button_faces = _append_uv_sphere(vertices, faces, tuple(p3), unit * 0.022, 7, 4)
+        material_faces.extend((i, 4) for i in button_faces)
+    # Recess-like square chip packages around the rim.
+    for index in range(rng.randint(6, 10)):
+        angle = math.tau * index / 8.0 + rng.uniform(-0.08, 0.08)
+        r = radius * rng.uniform(0.63, 0.73)
+        x, y = r * math.cos(angle), r * math.sin(angle)
+        dims = (unit * rng.uniform(0.07, 0.12), unit * 0.045, unit * rng.uniform(0.045, 0.075))
+        _append_block(vertices, faces, (x, y, depth * 0.70), dims, angle)
+    return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
+
+
+def _build_orbital_particle(settings, rng):
+    """A crescent-shaped swarm of metallic spheres connected by delicate filament lines."""
+    vertices, faces = [], []
+    dark_faces, material_faces = [], []
+    unit = settings.size
+    major_radius = unit * rng.uniform(0.42, 0.52)
+    minor_radius = unit * rng.uniform(0.18, 0.26)
+    count = max(36, min(76, settings.detail + 24))
+    phase = rng.uniform(0.0, math.tau)
+    anchors = []
+    for index in range(count):
+        t = math.tau * (index / count) + phase
+        # Small gap and vertical wobble make it an asymmetric orbital cloud, not a donut.
+        if 0.78 * math.pi < (t % math.tau) < 1.12 * math.pi:
+            continue
+        radial = major_radius * (1.0 + 0.08 * math.sin(3.0 * t + phase))
+        x = radial * math.cos(t)
+        y = minor_radius * math.sin(t) + unit * 0.055 * math.sin(2.0 * t + phase)
+        z = unit * 0.16 * math.sin(2.0 * t + phase * 0.7)
+        center = Vector((x, y, z))
+        anchors.append(center)
+        large_radius = unit * rng.uniform(0.035, 0.078)
+        sphere_faces = _append_uv_sphere(vertices, faces, tuple(center), large_radius, 9, 6)
+        material_faces.extend((i, 1 if index % 4 == 0 else 0) for i in sphere_faces)
+        # Several satellite pearls cluster close to each major node.
+        for pearl in range(rng.randint(1, 4)):
+            offset = Vector((rng.uniform(-0.10,0.10), rng.uniform(-0.10,0.10), rng.uniform(-0.10,0.10))) * unit
+            pearl_center = center + offset
+            pearl_radius = unit * rng.uniform(0.008, 0.028)
+            pearl_faces = _append_uv_sphere(vertices, faces, tuple(pearl_center), pearl_radius, 7, 4)
+            material_faces.extend((i, rng.choice((1, 2, 3, 4))) for i in pearl_faces)
+    # Sparse struts form a visible scientific network through the cloud.
+    if len(anchors) > 8:
+        for index in range(0, len(anchors), 2):
+            end_a = anchors[index]
+            end_b = anchors[(index + rng.randint(3, 7)) % len(anchors)]
+            start_face = len(faces)
+            _append_tube(vertices, faces, (end_a, end_b), unit * rng.uniform(0.0025, 0.006),
+                         sides=4, closed=False, cap_ends=True)
+            material_faces.extend((i, 3 if index % 5 == 0 else 2) for i in range(start_face, len(faces)))
+    return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
+
+
+def _build_cellular_void(settings, rng):
+    """A porous organic-metal exoskeleton built from irregular spherical lattice struts."""
+    vertices, faces = [], []
+    dark_faces, material_faces = [], []
+    unit = settings.size
+    latitudes = max(8, min(16, settings.detail // 3))
+    longitudes = latitudes * 2
+    points = {}
+    base_radius = unit * rng.uniform(0.43, 0.55)
+    phase = rng.uniform(0.0, math.tau)
+    for row in range(1, latitudes):
+        theta = math.pi * row / latitudes
+        for col in range(longitudes):
+            phi = math.tau * col / longitudes
+            wobble = 1.0 + 0.08 * math.sin(3.0 * phi + phase) * math.sin(2.0 * theta)
+            wobble += rng.uniform(-0.045, 0.045)
+            radius = base_radius * wobble
+            points[(row,col)] = Vector((
+                radius * math.sin(theta) * math.cos(phi),
+                radius * math.sin(theta) * math.sin(phi),
+                radius * math.cos(theta),
+            ))
+    # Connect only selected grid edges, leaving irregular openings through the shell.
+    def add_strut(a, b, accent=False):
+        start_face = len(faces)
+        _append_tube(vertices, faces, (a,b), unit * rng.uniform(0.009, 0.020), sides=5, closed=False, cap_ends=True)
+        mat = 2 if accent else 0
+        material_faces.extend((i, mat) for i in range(start_face, len(faces)))
+    for row in range(1, latitudes):
+        for col in range(longitudes):
+            here = points[(row,col)]
+            next_col = points[(row,(col+1)%longitudes)]
+            if rng.random() < 0.78:
+                add_strut(here, next_col, rng.random() < 0.09)
+            if row < latitudes-1 and rng.random() < 0.80:
+                add_strut(here, points[(row+1,col)], rng.random() < 0.08)
+            if row < latitudes-1 and rng.random() < 0.24:
+                add_strut(here, points[(row+1,(col+1)%longitudes)], rng.random() < 0.10)
+    # Node beads soften the intersections and emphasize the hollow, porous construction.
+    for key, point in points.items():
+        if rng.random() < 0.82:
+            radius = unit * rng.uniform(0.014, 0.034)
+            bead_faces = _append_uv_sphere(vertices, faces, tuple(point), radius, 7, 4)
+            material_faces.extend((i, 1 if rng.random() < 0.18 else 0) for i in bead_faces)
+    # A few inward braces create visible depth inside the holes.
+    for index in range(rng.randint(8, 14)):
+        a = rng.choice(list(points.values()))
+        b = rng.choice(list(points.values()))
+        start_face = len(faces)
+        _append_tube(vertices, faces, (a * 0.90, b * 0.90), unit * 0.007, sides=4, closed=False, cap_ends=True)
+        material_faces.extend((i, 2) for i in range(start_face, len(faces)))
+    return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
+
+
+def _build_spike_bloom(settings, rng):
+    """A dark mechanical-organic orb with irregular tapered spikes and warm inner accents."""
+    vertices, faces = [], []
+    dark_faces, material_faces = [], []
+    unit = settings.size
+    core_radius = unit * rng.uniform(0.29, 0.38)
+    core_faces = _append_uv_sphere(vertices, faces, (0,0,0), core_radius, 24, 16)
+    material_faces.extend((i, 0) for i in core_faces)
+    spike_count = max(28, min(68, settings.detail + 24))
+    golden_angle = math.pi * (3.0 - math.sqrt(5.0))
+    for index in range(spike_count):
+        z = 1.0 - 2.0 * (index + 0.5) / spike_count
+        radial = math.sqrt(max(0.0, 1.0 - z*z))
+        angle = index * golden_angle + rng.uniform(-0.22,0.22)
+        direction = Vector((radial*math.cos(angle),radial*math.sin(angle),z)).normalized()
+        start = direction * (core_radius * rng.uniform(0.82, 1.03))
+        length = unit * rng.uniform(0.10, 0.30)
+        tip = direction * (core_radius + length)
+        spike_faces = _append_cone_between(vertices, faces, start, tip, unit*rng.uniform(0.014,0.042), sides=rng.randint(5,8))
+        accent = rng.random() < 0.22
+        material_faces.extend((i, 3 if accent else 1) for i in spike_faces)
+    # Small embedded reactor ports and a few gold/cyan nodules.
+    for index in range(rng.randint(8, 16)):
+        direction = Vector((rng.uniform(-1,1),rng.uniform(-1,1),rng.uniform(-1,1))).normalized()
+        center = direction * core_radius * 0.97
+        port_faces = _append_uv_sphere(vertices, faces, tuple(center), unit*rng.uniform(0.014,0.032), 8, 5)
+        material_faces.extend((i, 2 if index % 3 else 3) for i in port_faces)
+    return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
+
+
 def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrides=None):
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(vertices, [], faces)
@@ -1303,6 +1633,11 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             "FOLDED_RIBBON": _build_folded_ribbon,
             "PRISM_REACTOR": _build_prism_reactor,
             "FACETED_TOTEM": _build_faceted_totem,
+            "HEX_ARMOR": _build_hex_armor,
+            "CIRCUIT_CORE": _build_circuit_core,
+            "ORBITAL_PARTICLE": _build_orbital_particle,
+            "CELLULAR_VOID": _build_cellular_void,
+            "SPIKE_BLOOM": _build_spike_bloom,
         }
         builder = builders.get(shape_type)
         if builder is None:
