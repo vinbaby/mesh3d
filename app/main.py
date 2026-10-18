@@ -140,7 +140,7 @@ class MeshViewport(QWidget):
                 painter.setPen(QPen(QColor("#72efb5"), self.line_width,
                                     Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                                     Qt.PenJoinStyle.RoundJoin))
-                painter.drawPolyline(view_points)
+                painter.drawPolyline(QPolygonF(view_points))
             if view_points:
                 painter.setPen(QPen(QColor("#10251c"), 1))
                 painter.setBrush(QColor("#a5ffd5"))
