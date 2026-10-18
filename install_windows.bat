@@ -4,12 +4,12 @@ py -3 -m venv .venv
 if errorlevel 1 goto :error
 .venv\Scripts\python.exe -m pip install --upgrade pip
 if errorlevel 1 goto :error
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -e ".[test]"
 if errorlevel 1 goto :error
 .venv\Scripts\python.exe -m pytest -q
 if errorlevel 1 goto :error
 echo.
-echo Install and test setup complete. Run run_windows.bat to open VIN 3D Studio.
+echo Install and smoke tests complete. Run run_windows.bat to open VIN 3D Studio.
 pause
 exit /b 0
 :error
