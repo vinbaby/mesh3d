@@ -1,45 +1,40 @@
-# VIN Procedural Lab — Blender Add-on v0.5.0
+# VIN Procedural Lab — Blender Add-on v0.6.0
 
 A separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
 ## 1. Random Object / Procedural Shape Generator
-Generates one editable artifact at a time as a Blender mesh object. Random Object chooses from the available shape families using the current Seed. New Variant changes the seed and generates again. The four newer artifact families now have more visible hard-surface finishing:
+Generates one editable procedural artifact at a time as a Blender mesh object. Random Object selects a family by Seed; New Variant increments the seed and generates another form.
 
-- **Cyber Module** — stacked housings, real recessed rectangular wells with inner walls, inset dark floors, perimeter rails, and vents installed down inside the wells.
-- **Folded Ribbon** — a broad twisting metal ribbon with an actual longitudinal channel and raised side lips.
-- **Prism Reactor** — faceted core with intersecting open metal frames.
-- **Faceted Totem** — layered polygonal plates, slanted facets, fins, and micro-ribs.
+### Hard-surface / cyberpunk families
+- **Cyber Module** — stacked housings, inset front wells, dark cavity floors, perimeter rails, and grille slats.
+- **Folded Ribbon** — twisting formed-metal ribbon with a grooved cross-section and raised edge lips.
+- **Prism Reactor** — faceted core inside intersecting metal frames.
+- **Faceted Totem** — stacked polygonal plates, angled fins, and micro-ribs.
+- **Hex Armor** — a sci-fi shield/panel with dozens of raised hexagonal tiles, dark seams, a rigid perimeter, and metallic accents.
+- **Circuit Core** — a layered circular electronic artifact with actual tube geometry for circuit traces, concentric raised rails, chips, and signal nodes.
 
-Existing families remain available: Twisted Column, Orbital Cage, Organic Blob, Crystal Cluster, Branching Form and Future Sculpture. The newer object families use coordinated editable multi-material palettes with metal-like and emissive materials. Bevel modifiers have more visible widths and three segments, capped based on the object's overall proportions.
+### Abstract / organic families
+- **Orbital Particle** — a crescent swarm of reflective spheres and tiny pearls, tied together by delicate filament struts.
+- **Cellular Void** — a porous spherical exoskeleton with irregular openings, crossing struts, and bead-like joints.
+- **Spike Bloom** — a dark mechanical-organic orb with many independent tapered spines and small reactor ports.
+- **Future Sculpture**, **Orbital Cage**, **Organic Blob**, **Branching Form**, **Crystal Cluster**, and **Twisted Column** remain available.
+
+The newer families have their own editable multi-material palettes. The geometry is generated algorithmically, so different seeds affect shape, spacing, density, proportions, and details instead of only changing the color. Some parts overlap in one mesh object as a procedural assembly; this is a starting point for art direction rather than guaranteed watertight manufacturing topology.
 
 ## 2. Sci-Fi Scene Builder
-An optional whole-environment generator kept separate from Random Object:
-- A layered reactor plaza with radial runway markers
-- A hero core tower, side wings and randomized perimeter stations
-- Armor shells, panel recesses, vents, seams, rooftop antennae and beacons
-- Amber/cyan emissive trims, orbital rails and a connector bridge
-- A generated camera and area lights
-
-Use Generate Scene to build from the current Seed or Random Scene to make a different environment. All generated assets are editable Blender objects in a named collection. This is a procedural scene blockout, not a guarantee of a polished concept-art render.
+An optional environment generator separate from Random Object. It creates a layered reactor plaza, several towers, hard-surface panels, glowing trims, orbital rails, a camera, and lights. Use Generate Scene or Random Scene when a whole environment is wanted.
 
 ## 3. Animation Builder
-Builds an editable Geometry Nodes group and adds it as a modifier to the active object:
-- **Bob / Float** — Scene Time drives a sine wave connected to Set Position offset
-- **Continuous Spin** — Scene Time drives Transform Geometry rotation
-- **Scale Pulse** — Scene Time drives a uniform scale pulse
-- **Animated Twist** — position fields and trigonometric nodes twist points around Z over time
-
-Preview animation by playing the timeline; use the Geometry Node Editor to inspect and edit the node graph.
+Builds editable Geometry Nodes for Bob / Float, Continuous Spin, Scale Pulse, or Animated Twist. Preview by playing the timeline and inspect the generated graph in the Geometry Node Editor.
 
 ## Install / update
-1. Open the file in GitHub and use the Download raw file action to get the add-on source file named vin_procedural_lab.py.
-2. In Blender, go to Edit → Preferences → Add-ons (wording varies by version), choose Install from Disk, select the .py file, then enable VIN Procedural Lab.
-3. In the 3D Viewport, press N and open the VIN Lab tab.
-4. For an existing install, disable/remove the older add-on version before installing this file to avoid duplicate panel/operator registrations. This does not change the separate VIN 3D Studio desktop app.
+1. Open the add-on source file on GitHub and use Download raw file to get the Python file.
+2. In Blender, go to Edit → Preferences → Add-ons, choose Install from Disk, select the Python file, and enable VIN Procedural Lab.
+3. Press N in the 3D Viewport and open the VIN Lab tab.
+4. For an existing install, disable/remove the previous add-on version before installing this one to avoid duplicate registrations. This does not change VIN 3D Studio.
 
 ## Notes
-- Shapes and scenes are generated by procedural algorithms, not by an AI image-generation API.
-- Object materials, meshes, modifiers and scene components remain editable in Blender.
-- New hard-surface cavities are actual mesh geometry in Cyber Module; the ribbon channel is built into its cross-section rather than painted as a texture.
-- CI compiles the add-on and executes the shape, scene and Geometry Nodes builders in background Blender. Review the visual art direction in your own Blender session as well.
-- Blender version targets 3.6+; Geometry Nodes and shading APIs can vary between releases.
+- This add-on uses procedural math and randomness, not an AI image-generation API.
+- Meshes, materials, and modifiers remain editable in Blender.
+- CI compiles the add-on and exercises each shape family, the scene generator, and the Geometry Nodes builders in background Blender. Visual styling should also be reviewed in the user's Blender session.
+- Targets Blender 3.6+; some APIs vary by Blender version.
