@@ -467,6 +467,8 @@ def _scene_box(collection, name, location, dimensions, material, bevel=0.06):
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(verts, [], faces)
     mesh.materials.append(material)
+    if hasattr(mesh, "use_auto_smooth"):
+        mesh.use_auto_smooth = True
     mesh.update()
     obj = bpy.data.objects.new(name, mesh)
     collection.objects.link(obj)
@@ -492,6 +494,8 @@ def _scene_cylinder(collection, name, location, radius, depth, material, sides=4
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(verts, [], faces)
     mesh.materials.append(material)
+    if hasattr(mesh, "use_auto_smooth"):
+        mesh.use_auto_smooth = True
     mesh.update()
     obj = bpy.data.objects.new(name, mesh)
     collection.objects.link(obj)
@@ -645,6 +649,13 @@ def _build_scifi_scene(context, settings, rng):
         obj.select_set(False)
     hero.select_set(True)
     context.view_layer.objects.active = hero
+    if context.area is not None and context.area.type == "VIEW_3D":
+        space = context.space_data
+        if getattr(space, "region_3d", None) is not None:
+            space.region_3d.view_location = Vector((0.0, 0.0, 4.0))
+            space.region_3d.view_distance = 28.0
+            space.region_3d.view_rotation = camera.rotation_euler.to_quaternion()
+            space.region_3d.view_perspective = "PERSP"
     scene["vinlab_scifi_scene_seed"] = settings.seed
     scene["vinlab_scifi_scene_collection"] = collection.name
     return collection, hero
