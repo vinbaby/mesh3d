@@ -232,7 +232,7 @@ class StudioWindow(QMainWindow):
 
         left_layout.addWidget(self._section("GRID RESOLUTION"))
         self.res_combo = QComboBox()
-        for value in (32, 48, 64, 80, 96, 112, 128):
+        for value in (32, 40, 48, 56, 64, 72, 80):
             self.res_combo.addItem(f"{value} × {value}", value)
         self.res_combo.setCurrentIndex(2)
         left_layout.addWidget(self.res_combo)
@@ -376,9 +376,7 @@ class StudioWindow(QMainWindow):
 
     def _depth_changed(self, value: int) -> None:
         self.depth_value.setText(f"{value / 100.0:.2f}")
-        # Rebuild only when a mesh already exists; the user controls when this happens.
-        if self.viewport.mesh is not None:
-            self.build_mesh()
+        # Avoid rebuilding during slider drags; click Build mesh preview to apply.
 
     def update_stats(self, mesh: ReliefMesh | None) -> None:
         if mesh is None:
