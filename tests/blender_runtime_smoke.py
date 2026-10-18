@@ -68,6 +68,24 @@ def main() -> None:
         bpy.context.view_layer.update()
         print(f"[OK] {animation_type}: {len(node_group.nodes)} nodes, {len(node_group.links)} links")
 
+    settings.seed = 24680
+    scene_result = bpy.ops.vinlab.generate_scifi_scene()
+    if "FINISHED" not in scene_result:
+        raise AssertionError(f"Sci-Fi scene builder failed: {scene_result}")
+    collection_name = bpy.context.scene.get("vinlab_scifi_scene_collection")
+    scene_collection = bpy.data.collections.get(collection_name) if collection_name else None
+    if scene_collection is None:
+        raise AssertionError("Sci-Fi scene collection was not registered on the scene")
+    if len(scene_collection.objects) < 50:
+        raise AssertionError(f"Sci-Fi scene has too few generated objects: {len(scene_collection.objects)}")
+    if bpy.context.scene.camera is None:
+        raise AssertionError("Sci-Fi scene did not create a camera")
+    if not any(obj.type == "LIGHT" for obj in scene_collection.objects):
+        raise AssertionError("Sci-Fi scene did not create any lights")
+    if not any(obj.type == "MESH" for obj in scene_collection.objects):
+        raise AssertionError("Sci-Fi scene did not create any mesh assets")
+    print(f"[OK] Sci-Fi scene: {len(scene_collection.objects)} objects, camera and lights created")
+
     print("VIN Procedural Lab Blender runtime smoke test passed.")
 
 
