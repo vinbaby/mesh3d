@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 import sys
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPointF, Signal
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,124 +34,172 @@ class ReliefMesh:
 
 
 class MeshViewport(QWidget):
-    """Small software-rendered relief viewport; no heavy 3D engine required."""
+    """2D reference-image viewport with manually drawn frame strokes."""
 
-    mesh_changed = Signal(object)
+    frame_changed = Signal(int, int)
 
     def __init__(self) -> None:
         super().__init__()
         self.setMinimumSize(360, 320)
         self.setMouseTracking(True)
-        self.mesh: ReliefMesh | None = None
-        self.rot_x = -0.25
-        self.rot_y = 0.45
-        self.zoom = 1.0
-        self.wireframe = False
-        self._last_mouse = None
+        self.reference_image: QImage | None = None
+        # Stroke points are normalized to the image rectangle (0..1), so the
+        # overlay remains attached to the reference if the viewport is resized.
+        self.frame_strokes: list[list[QPointF]] = []
+        self._active_stroke: list[QPointF] | None = None
+        self.draw_mode = False
+        self.line_width = 2.0
+        self.image_zoom = 1.0
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def set_mesh(self, mesh: ReliefMesh | None) -> None:
-        self.mesh = mesh
-        self.mesh_changed.emit(mesh)
+    def set_reference_image(self, image: QImage | None) -> None:
+        self.reference_image = image
+        self.frame_strokes.clear()
+        self._active_stroke = None
+        self.image_zoom = 1.0
+        self.frame_changed.emit(0, 0)
         self.update()
 
-    def reset_view(self) -> None:
-        self.rot_x, self.rot_y, self.zoom = -0.25, 0.45, 1.0
+    def set_draw_mode(self, enabled: bool) -> None:
+        self.draw_mode = enabled
+        self.setCursor(Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor)
         self.update()
 
-    def front_view(self) -> None:
-        self.rot_x, self.rot_y, self.zoom = 0.0, 0.0, 1.0
+    def undo_stroke(self) -> None:
+        if self._active_stroke is not None:
+            self._active_stroke = None
+        elif self.frame_strokes:
+            self.frame_strokes.pop()
+        self._emit_frame_changed()
         self.update()
+
+    def clear_frame(self) -> None:
+        self.frame_strokes.clear()
+        self._active_stroke = None
+        self._emit_frame_changed()
+        self.update()
+
+    def fit_image(self) -> None:
+        self.image_zoom = 1.0
+        self.update()
+
+    def _fit_rect(self) -> QRectF:
+        if self.reference_image is None or self.reference_image.isNull():
+            return QRectF()
+        iw, ih = self.reference_image.width(), self.reference_image.height()
+        scale = min(self.width() / max(1, iw), self.height() / max(1, ih)) * self.image_zoom
+        width, height = iw * scale, ih * scale
+        return QRectF((self.width() - width) / 2, (self.height() - height) / 2, width, height)
+
+    def _normalized_point(self, pos: QPointF) -> QPointF | None:
+        rect = self._fit_rect()
+        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0 or not rect.contains(pos):
+            return None
+        return QPointF(
+            max(0.0, min(1.0, (pos.x() - rect.left()) / rect.width())),
+            max(0.0, min(1.0, (pos.y() - rect.top()) / rect.height())),
+        )
+
+    def _to_view(self, point: QPointF) -> QPointF:
+        rect = self._fit_rect()
+        return QPointF(rect.left() + point.x() * rect.width(),
+                       rect.top() + point.y() * rect.height())
+
+    def _emit_frame_changed(self) -> None:
+        strokes = list(self.frame_strokes)
+        if self._active_stroke:
+            strokes.append(self._active_stroke)
+        self.frame_changed.emit(len(strokes), sum(len(stroke) for stroke in strokes))
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(self.rect(), QColor("#282e37"))
-        self._draw_grid(painter)
-        if not self.mesh:
+        if self.reference_image is None or self.reference_image.isNull():
             painter.setPen(QColor("#b7c1d0"))
             painter.drawText(
-                self.rect(),
-                Qt.AlignmentFlag.AlignCenter,
-                "VIN 3D STUDIO\n\nLoad an image to start",
+                self.rect(), Qt.AlignmentFlag.AlignCenter,
+                "VIN 3D STUDIO\n\nImport a reference image, then draw frame lines over it",
             )
             painter.end()
             return
 
-        points = [self._project(v) for v in self.mesh.vertices]
-        # Painter's algorithm: far faces first. The first phase intentionally
-        # keeps resolution modest to avoid blocking the UI on large meshes.
-        ordered = sorted(
-            self.mesh.triangles,
-            key=lambda face: (
-                points[face[0]][2] + points[face[1]][2] + points[face[2]][2]
-            ) / 3.0,
-        )
-        for face in ordered:
-            p0, p1, p2 = (points[face[0]], points[face[1]], points[face[2]])
-            polygon = QPolygonF(
-                [QPointF(p0[0], p0[1]), QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1])]
-            )
-            c0, c1, c2 = (self.mesh.colors[index] for index in face)
-            depth_shade = max(0.55, min(1.18, 0.92 + (p0[2] + p1[2] + p2[2]) / 18.0))
-            red = max(0, min(255, int((c0[0] + c1[0] + c2[0]) / 3 * depth_shade)))
-            green = max(0, min(255, int((c0[1] + c1[1] + c2[1]) / 3 * depth_shade)))
-            blue = max(0, min(255, int((c0[2] + c1[2] + c2[2]) / 3 * depth_shade)))
-            if self.wireframe:
+        image_rect = self._fit_rect()
+        painter.drawImage(image_rect, self.reference_image)
+        painter.setPen(QPen(QColor(8, 12, 18, 180), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(image_rect)
+
+        all_strokes = list(self.frame_strokes)
+        if self._active_stroke:
+            all_strokes.append(self._active_stroke)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for stroke in all_strokes:
+            view_points = [self._to_view(point) for point in stroke]
+            if len(view_points) >= 2:
+                painter.setPen(QPen(QColor("#72efb5"), self.line_width,
+                                    Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                                    Qt.PenJoinStyle.RoundJoin))
+                painter.drawPolyline(view_points)
+            if view_points:
+                painter.setPen(QPen(QColor("#10251c"), 1))
+                painter.setBrush(QColor("#a5ffd5"))
+                stride = max(1, len(view_points) // 35)
+                for point in view_points[::stride]:
+                    painter.drawEllipse(point, 2.3, 2.3)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.setPen(QPen(QColor(120, 226, 178, 170), 0.55))
-            else:
-                painter.setBrush(QColor(red, green, blue))
-                # No edge pen in solid mode; outlining every triangle made a
-                # dense wire grid appear even when Wireframe was switched off.
-                painter.setPen(QPen(Qt.PenStyle.NoPen))
-            painter.drawPolygon(polygon)
+
+        if self.draw_mode:
+            painter.fillRect(QRectF(12, 12, 180, 27), QColor(20, 29, 35, 215))
+            painter.setPen(QColor("#a5ffd5"))
+            painter.drawText(QRectF(21, 12, 170, 27),
+                             Qt.AlignmentFlag.AlignVCenter, "FRAME DRAW MODE · DRAG")
         painter.end()
 
-    def _draw_grid(self, painter: QPainter) -> None:
-        w, h = self.width(), self.height()
-        base = int(h * 0.72)
-        painter.setPen(QPen(QColor(160, 175, 195, 26), 1))
-        for i in range(-10, 11):
-            x = w // 2 + i * 30
-            painter.drawLine(x, base, w // 2 + i * 65, h)
-        for row in range(8):
-            y = base + row * row * 4
-            painter.drawLine(0, y, w, y)
-
-    def _project(self, vertex: tuple[float, float, float]) -> tuple[float, float, float]:
-        x, y, z = vertex
-        cy, sy = math.cos(self.rot_y), math.sin(self.rot_y)
-        cx, sx = math.cos(self.rot_x), math.sin(self.rot_x)
-        xx = x * cy - z * sy
-        zz = x * sy + z * cy
-        yy = y * cx - zz * sx
-        zz = y * sx + zz * cx
-        scale = min(self.width(), self.height()) * 0.43 * self.zoom
-        return self.width() / 2 + xx * scale, self.height() / 2 - yy * scale, zz
-
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._last_mouse = event.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self.draw_mode and self.reference_image is not None):
+            point = self._normalized_point(event.position())
+            if point is not None:
+                self._active_stroke = [point]
+                self._emit_frame_changed()
+                self.update()
+                event.accept()
+                return
+        event.ignore()
 
     def mouseMoveEvent(self, event) -> None:
-        if self._last_mouse is None:
+        if self._active_stroke is None:
             return
-        current = event.position()
-        delta = current - self._last_mouse
-        self.rot_y += delta.x() * 0.008
-        self.rot_x += delta.y() * 0.008
-        self._last_mouse = current
-        self.update()
+        point = self._normalized_point(event.position())
+        if point is None:
+            return
+        last = self._active_stroke[-1]
+        rect = self._fit_rect()
+        dx = (point.x() - last.x()) * rect.width()
+        dy = (point.y() - last.y()) * rect.height()
+        # Sampling every few screen pixels avoids millions of points on long drags.
+        if dx * dx + dy * dy >= 9.0:
+            self._active_stroke.append(point)
+            self._emit_frame_changed()
+            self.update()
 
     def mouseReleaseEvent(self, event) -> None:
-        self._last_mouse = None
-        self.setCursor(Qt.CursorShape.ArrowCursor)
+        if event.button() == Qt.MouseButton.LeftButton and self._active_stroke is not None:
+            if self._active_stroke:
+                self.frame_strokes.append(self._active_stroke)
+            self._active_stroke = None
+            self._emit_frame_changed()
+            self.update()
+            event.accept()
+            return
+        event.ignore()
 
     def wheelEvent(self, event) -> None:
-        factor = 1.08 if event.angleDelta().y() > 0 else 0.92
-        self.zoom = max(0.35, min(2.5, self.zoom * factor))
+        if self.reference_image is None:
+            return
+        factor = 1.12 if event.angleDelta().y() > 0 else 0.89
+        self.image_zoom = max(1.0, min(4.0, self.image_zoom * factor))
         self.update()
 
 
@@ -173,6 +222,7 @@ class StudioWindow(QMainWindow):
             QPushButton { background: #2b313b; border: 1px solid #485363; border-radius: 6px; padding: 8px 10px; }
             QPushButton:hover { border-color: #78e2b2; }
             QPushButton#primary { color: #102019; background: #78e2b2; border-color: #78e2b2; font-weight: 700; }
+            QPushButton:checked { color: #102019; background: #78e2b2; border-color: #78e2b2; font-weight: 700; }
             QSlider { accent-color: #78e2b2; }
             QFrame#side { background: #20242c; }
             QStatusBar { background: #171a20; color: #a5afbe; }
@@ -191,11 +241,11 @@ class StudioWindow(QMainWindow):
         title.setStyleSheet("font-size:16px")
         header.addWidget(title)
         header.addSpacing(8)
-        version = QLabel("CLEAN START · PHASE 1")
+        version = QLabel("REFERENCE FRAME · v0.1.2")
         version.setObjectName("muted")
         header.addWidget(version)
         header.addStretch(1)
-        header.addWidget(QLabel("Image-to-Mesh prototype"))
+        header.addWidget(QLabel("Draw wireframe over image"))
         outer.addLayout(header)
 
         body = QHBoxLayout()
@@ -209,9 +259,9 @@ class StudioWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(16, 16, 16, 16)
         left_layout.setSpacing(10)
-        left_layout.addWidget(self._section("IMAGE INPUT"))
-        left_layout.addWidget(QLabel("Load a reference image to build a relief preview."))
-        browse = QPushButton("Browse image…")
+        left_layout.addWidget(self._section("REFERENCE IMAGE"))
+        left_layout.addWidget(QLabel("Import a picture, then trace frame lines directly on top."))
+        browse = QPushButton("Import image…")
         browse.setObjectName("primary")
         browse.clicked.connect(self.load_image)
         left_layout.addWidget(browse)
@@ -220,48 +270,58 @@ class StudioWindow(QMainWindow):
         self.file_label.setWordWrap(True)
         left_layout.addWidget(self.file_label)
 
-        left_layout.addSpacing(8)
-        left_layout.addWidget(self._section("EXTRUSION DEPTH"))
-        self.depth_value = QLabel("0.35")
-        self.depth_slider = QSlider(Qt.Orientation.Horizontal)
-        self.depth_slider.setRange(0, 100)
-        self.depth_slider.setValue(35)
-        self.depth_slider.valueChanged.connect(self._depth_changed)
-        depth_row = QHBoxLayout()
-        depth_row.addWidget(self.depth_slider, 1)
-        depth_row.addWidget(self.depth_value)
-        left_layout.addLayout(depth_row)
+        left_layout.addSpacing(10)
+        left_layout.addWidget(self._section("FRAME DRAWING"))
+        self.draw_button = QPushButton("Draw frame: OFF")
+        self.draw_button.setCheckable(True)
+        self.draw_button.setEnabled(False)
+        self.draw_button.toggled.connect(self._draw_mode_toggled)
+        left_layout.addWidget(self.draw_button)
 
-        left_layout.addWidget(self._section("GRID RESOLUTION"))
-        self.res_combo = QComboBox()
-        for value in (32, 40, 48, 56, 64, 72, 80):
-            self.res_combo.addItem(f"{value} × {value}", value)
-        self.res_combo.setCurrentIndex(2)
-        left_layout.addWidget(self.res_combo)
+        self.undo_button = QPushButton("Undo last stroke")
+        self.undo_button.setEnabled(False)
+        self.undo_button.clicked.connect(self.undo_stroke)
+        left_layout.addWidget(self.undo_button)
 
-        self.build_button = QPushButton("Build mesh preview")
-        self.build_button.setObjectName("primary")
-        self.build_button.setEnabled(False)
-        self.build_button.clicked.connect(self.build_mesh)
-        left_layout.addWidget(self.build_button)
-        reset = QPushButton("Reset scene")
-        reset.clicked.connect(self.reset_scene)
-        left_layout.addWidget(reset)
+        self.clear_button = QPushButton("Clear frame")
+        self.clear_button.setEnabled(False)
+        self.clear_button.clicked.connect(self.clear_frame)
+        left_layout.addWidget(self.clear_button)
+
+        left_layout.addWidget(self._section("LINE WIDTH"))
+        width_row = QHBoxLayout()
+        self.line_slider = QSlider(Qt.Orientation.Horizontal)
+        self.line_slider.setRange(1, 6)
+        self.line_slider.setValue(2)
+        self.line_value = QLabel("2 px")
+        self.line_slider.valueChanged.connect(self._line_width_changed)
+        width_row.addWidget(self.line_slider, 1)
+        width_row.addWidget(self.line_value)
+        left_layout.addLayout(width_row)
+
+        self.save_button = QPushButton("Save frame data…")
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self.save_frame)
+        left_layout.addWidget(self.save_button)
+        fit_button = QPushButton("Fit image")
+        fit_button.clicked.connect(self.viewport.fit_image)
+        left_layout.addWidget(fit_button)
 
         note = QLabel(
-            "This first phase creates a brightness-based 2.5D relief. "
-            "It does not yet infer a complete AI-generated model or hidden back side."
+            "Turn on Draw frame, then left-click and drag to draw strokes over the reference. "
+            "Mouse wheel zooms the image. This tool records 2D guide strokes; it does not "
+            "generate a 3D model automatically."
         )
         note.setObjectName("muted")
         note.setWordWrap(True)
-        left_layout.addSpacing(10)
+        left_layout.addSpacing(8)
         left_layout.addWidget(note)
         left_layout.addStretch(1)
         body.addWidget(left)
 
         self.viewport = MeshViewport()
         self.viewport.setStyleSheet("background:#282e37;")
-        self.viewport.mesh_changed.connect(self.update_stats)
+        self.viewport.frame_changed.connect(self.update_frame_stats)
         body.addWidget(self.viewport, 1)
 
         right = QFrame()
@@ -270,22 +330,17 @@ class StudioWindow(QMainWindow):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(16, 16, 16, 16)
         right_layout.setSpacing(8)
-        right_layout.addWidget(self._section("SCENE"))
-        self.object_value = self._stat(right_layout, "Active object", "None")
-        self.vertices_value = self._stat(right_layout, "Vertices", "0")
-        self.triangles_value = self._stat(right_layout, "Triangles", "0")
-        self.mode_value = self._stat(right_layout, "Mode", "Empty")
+        right_layout.addWidget(self._section("REFERENCE"))
+        self.object_value = self._stat(right_layout, "Active image", "None")
+        self.strokes_value = self._stat(right_layout, "Strokes", "0")
+        self.points_value = self._stat(right_layout, "Frame points", "0")
+        self.mode_value = self._stat(right_layout, "Mode", "Image view")
         right_layout.addSpacing(14)
-        right_layout.addWidget(self._section("VIEW"))
-        front = QPushButton("Front view")
-        front.clicked.connect(self.viewport.front_view)
-        right_layout.addWidget(front)
-        self.wire_button = QPushButton("Wireframe: off")
-        self.wire_button.clicked.connect(self.toggle_wireframe)
-        right_layout.addWidget(self.wire_button)
+        right_layout.addWidget(self._section("WORKFLOW"))
+        right_layout.addWidget(QLabel("1. Import image\n2. Enable Draw frame\n3. Trace contours / edges\n4. Undo or clear as needed\n5. Save frame JSON"))
         right_layout.addSpacing(14)
-        right_layout.addWidget(self._section("NEXT PHASE"))
-        export_note = QLabel("GLB export and full AI image-to-3D generation are not included yet.")
+        right_layout.addWidget(self._section("NEXT STEP"))
+        export_note = QLabel("Next: turn the drawn guides into editable vertices and edges for a real mesh workflow.")
         export_note.setObjectName("muted")
         export_note.setWordWrap(True)
         right_layout.addWidget(export_note)
@@ -324,197 +379,98 @@ class StudioWindow(QMainWindow):
         self.image_path = Path(filename)
         self.file_label.setText(self.image_path.name)
         self.object_value.setText(self.image_path.name)
-        self.mode_value.setText("Image loaded")
-        self.build_button.setEnabled(True)
-        self.statusBar().showMessage("Image loaded · Build a mesh preview")
+        self.viewport.set_reference_image(self.image)
+        self.draw_button.setEnabled(True)
+        self.draw_button.setChecked(False)
+        self.undo_button.setEnabled(True)
+        self.clear_button.setEnabled(True)
+        self.save_button.setEnabled(True)
+        self.mode_value.setText("Image view")
+        self.statusBar().showMessage("Image loaded · Enable Draw frame to trace lines")
 
-    def build_mesh(self) -> None:
-        if self.image is None:
-            return
-
-        # Use the selected value as the longest image edge. The mesh follows
-        # the foreground silhouette instead of filling the entire rectangle.
-        longest = int(self.res_combo.currentData())
-        aspect = self.image.width() / max(1, self.image.height())
-        if aspect >= 1.0:
-            cols = longest
-            rows = max(8, round(longest / aspect))
-        else:
-            rows = longest
-            cols = max(8, round(longest * aspect))
-
-        sample = self.image.scaled(
-            cols, rows, Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        ).convertToFormat(QImage.Format.Format_ARGB32)
-        rgb: list[tuple[int, int, int]] = []
-        alpha: list[int] = []
-        border_colors: list[tuple[int, int, int]] = []
-        for y in range(rows):
-            for x in range(cols):
-                color = sample.pixelColor(x, y)
-                rgb.append((color.red(), color.green(), color.blue()))
-                alpha.append(color.alpha())
-                if x == 0 or y == 0 or x == cols - 1 or y == rows - 1:
-                    border_colors.append((color.red(), color.green(), color.blue()))
-
-        # Estimate a flat background from border pixels, then flood-fill only
-        # similar pixels connected to the image border. Interior white details
-        # (eyes/teeth/highlights) therefore remain part of the silhouette.
-        border_colors.sort(key=lambda c: c[0])
-        red_bg = sorted(c[0] for c in border_colors)[len(border_colors) // 2]
-        green_bg = sorted(c[1] for c in border_colors)[len(border_colors) // 2]
-        blue_bg = sorted(c[2] for c in border_colors)[len(border_colors) // 2]
-        tolerance = 62.0
-        background_candidate = []
-        for i, (red, green, blue) in enumerate(rgb):
-            distance = math.sqrt(
-                (red - red_bg) ** 2 + (green - green_bg) ** 2 + (blue - blue_bg) ** 2
-            )
-            background_candidate.append(alpha[i] < 24 or distance <= tolerance)
-
-        background = bytearray(cols * rows)
-        queue = deque()
-
-        def add_background(index: int) -> None:
-            if background_candidate[index] and not background[index]:
-                background[index] = 1
-                queue.append(index)
-
-        for x in range(cols):
-            add_background(x)
-            add_background((rows - 1) * cols + x)
-        for y in range(rows):
-            add_background(y * cols)
-            add_background(y * cols + cols - 1)
-
-        while queue:
-            index = queue.popleft()
-            x, y = index % cols, index // cols
-            if x > 0:
-                add_background(index - 1)
-            if x + 1 < cols:
-                add_background(index + 1)
-            if y > 0:
-                add_background(index - cols)
-            if y + 1 < rows:
-                add_background(index + cols)
-
-        foreground = [not bool(value) for value in background]
-        foreground_count = sum(foreground)
-        total = cols * rows
-        if foreground_count < max(4, int(total * 0.008)):
-            QMessageBox.warning(
-                self, "Silhouette not found",
-                "Could not identify a foreground shape. Try an image with a clear, "
-                "plain background."
-            )
-            return
-        if foreground_count > int(total * 0.94):
-            QMessageBox.warning(
-                self, "Background not separated",
-                "The image background is too complex or differs too much around the edges. "
-                "For this prototype, use a character/object on a plain background."
-            )
-            return
-
-        # Create a closed extruded silhouette: front and back vertices share XY
-        # positions; only the object boundary receives side walls. Color is
-        # sampled for appearance, not converted into per-pixel vertex height.
-        depth = max(0.02, self.depth_slider.value() / 100.0)
-        unit = 2.0 / max(1, max(cols - 1, rows - 1))
-        vertices: list[tuple[float, float, float]] = []
-        colors: list[tuple[int, int, int]] = []
-        front_map = [-1] * total
-        back_map = [-1] * total
-
-        for y in range(rows):
-            for x in range(cols):
-                index = y * cols + x
-                if not foreground[index]:
-                    continue
-                red, green, blue = rgb[index]
-                px = (x - (cols - 1) / 2.0) * unit
-                py = ((rows - 1) / 2.0 - y) * unit
-                front_map[index] = len(vertices)
-                vertices.append((px, py, depth * 0.5))
-                colors.append((red, green, blue))
-                back_map[index] = len(vertices)
-                vertices.append((px, py, -depth * 0.5))
-                colors.append((int(red * 0.42), int(green * 0.42), int(blue * 0.42)))
-
-        front_faces: list[tuple[int, int, int]] = []
-        for y in range(rows - 1):
-            for x in range(cols - 1):
-                cell = [
-                    front_map[y * cols + x],
-                    front_map[y * cols + x + 1],
-                    front_map[(y + 1) * cols + x + 1],
-                    front_map[(y + 1) * cols + x],
-                ]
-                valid = [vertex for vertex in cell if vertex >= 0]
-                if len(valid) == 4:
-                    a, b, d, c = cell
-                    front_faces.extend(((a, c, b), (b, c, d)))
-                elif len(valid) == 3:
-                    front_faces.append((valid[0], valid[1], valid[2]))
-
-        # Count edges in the front triangulation. Edges used once form the
-        # silhouette boundary and receive side-wall quads to close the volume.
-        edge_counts: dict[tuple[int, int], int] = {}
-        for a, b, c in front_faces:
-            for first, second in ((a, b), (b, c), (c, a)):
-                edge = (min(first, second), max(first, second))
-                edge_counts[edge] = edge_counts.get(edge, 0) + 1
-
-        triangles: list[tuple[int, int, int]] = list(front_faces)
-        triangles.extend(
-            (back_map[a], back_map[c], back_map[b]) for a, b, c in front_faces
-        )
-        # Back faces are reversed for consistent outward normals.
-        # Add side faces along each exposed front edge.
-        for (a, b), count in edge_counts.items():
-            if count != 1:
-                continue
-            back_a = a + 1
-            back_b = b + 1
-            triangles.append((a, back_a, b))
-            triangles.append((b, back_a, back_b))
-
-        mesh = ReliefMesh(max(cols, rows), vertices, colors, triangles)
-        self.viewport.set_mesh(mesh)
-        self.mode_value.setText("Silhouette solid")
+    def _draw_mode_toggled(self, enabled: bool) -> None:
+        self.viewport.set_draw_mode(enabled)
+        self.draw_button.setText(f"Draw frame: {'ON' if enabled else 'OFF'}")
+        self.mode_value.setText("Drawing frame" if enabled else "Image view")
         self.statusBar().showMessage(
-            f"Silhouette mesh · {cols} × {rows} sample · {len(vertices):,} vertices · "
-            f"{len(triangles):,} triangles"
+            "Draw mode on · left-drag on the image to add frame strokes"
+            if enabled else "Draw mode off · image navigation"
         )
 
-    def _depth_changed(self, value: int) -> None:
-        self.depth_value.setText(f"{value / 100.0:.2f}")
-        # Avoid rebuilding during slider drags; click Build mesh preview to apply.
-
-    def update_stats(self, mesh: ReliefMesh | None) -> None:
-        if mesh is None:
-            self.vertices_value.setText("0")
-            self.triangles_value.setText("0")
-        else:
-            self.vertices_value.setText(f"{len(mesh.vertices):,}")
-            self.triangles_value.setText(f"{len(mesh.triangles):,}")
-
-    def toggle_wireframe(self) -> None:
-        self.viewport.wireframe = not self.viewport.wireframe
-        self.wire_button.setText(f"Wireframe: {'on' if self.viewport.wireframe else 'off'}")
+    def _line_width_changed(self, value: int) -> None:
+        self.line_value.setText(f"{value} px")
+        self.viewport.line_width = float(value)
         self.viewport.update()
+
+    def update_frame_stats(self, stroke_count: int, point_count: int) -> None:
+        self.strokes_value.setText(str(stroke_count))
+        self.points_value.setText(f"{point_count:,}")
+        self.undo_button.setEnabled(self.image is not None and stroke_count > 0)
+        self.clear_button.setEnabled(self.image is not None and stroke_count > 0)
+        self.save_button.setEnabled(self.image is not None and stroke_count > 0)
+
+    def undo_stroke(self) -> None:
+        self.viewport.undo_stroke()
+        self.statusBar().showMessage("Last stroke undone")
+
+    def clear_frame(self) -> None:
+        if not self.viewport.frame_strokes and self.viewport._active_stroke is None:
+            return
+        answer = QMessageBox.question(
+            self, "Clear frame", "Remove all frame strokes from this image?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.viewport.clear_frame()
+        self.statusBar().showMessage("Frame cleared")
+
+    def save_frame(self) -> None:
+        strokes = self.viewport.frame_strokes
+        if not strokes:
+            QMessageBox.information(self, "No frame", "Draw at least one stroke before saving.")
+            return
+        default_name = (
+            f"{self.image_path.stem}_frame.json" if self.image_path
+            else "reference_frame.json"
+        )
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Save frame data", default_name, "Frame data (*.json)"
+        )
+        if not filename:
+            return
+        data = {
+            "format": "vin-3d-studio-reference-frame",
+            "version": 1,
+            "source_image": self.image_path.name if self.image_path else None,
+            "image_size": [self.image.width(), self.image.height()] if self.image else None,
+            "coordinate_space": "normalized_image_0_to_1",
+            "line_width_px": self.viewport.line_width,
+            "strokes": [
+                [{"u": round(point.x(), 6), "v": round(point.y(), 6)} for point in stroke]
+                for stroke in strokes
+            ],
+        }
+        try:
+            Path(filename).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Save failed", f"Could not save frame data:\n{exc}")
+            return
+        self.statusBar().showMessage(f"Frame data saved · {Path(filename).name}")
 
     def reset_scene(self) -> None:
         self.image = None
         self.image_path = None
         self.file_label.setText("No image selected")
-        self.build_button.setEnabled(False)
+        self.draw_button.setChecked(False)
+        self.draw_button.setEnabled(False)
+        self.undo_button.setEnabled(False)
+        self.clear_button.setEnabled(False)
+        self.save_button.setEnabled(False)
         self.object_value.setText("None")
-        self.mode_value.setText("Empty")
-        self.viewport.set_mesh(None)
-        self.viewport.reset_view()
+        self.mode_value.setText("Image view")
+        self.viewport.set_reference_image(None)
         self.statusBar().showMessage("Scene reset · No image loaded")
 
 
