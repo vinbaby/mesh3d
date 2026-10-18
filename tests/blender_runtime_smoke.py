@@ -22,6 +22,7 @@ def main() -> None:
     settings.detail = 12
     settings.size = 1.5
     settings.branch_depth = 2
+    settings.twist = 2.6
 
     generated = []
     shape_types = (
@@ -30,6 +31,7 @@ def main() -> None:
         "ORGANIC_BLOB",
         "CRYSTAL_CLUSTER",
         "BRANCHING_FORM",
+        "FUTURE_SCULPTURE",
     )
     for shape_type in shape_types:
         settings.shape_type = shape_type
