@@ -261,7 +261,7 @@ class StudioWindow(QMainWindow):
         title.setStyleSheet("font-size:16px")
         header.addWidget(title)
         header.addSpacing(8)
-        version = QLabel("REFERENCE FRAME · v0.1.2")
+        version = QLabel("REFERENCE FRAME · v0.1.4 AUTO WIREFRAME")
         version.setObjectName("muted")
         header.addWidget(version)
         header.addStretch(1)
@@ -334,9 +334,9 @@ class StudioWindow(QMainWindow):
         left_layout.addWidget(fit_button)
 
         note = QLabel(
-            "On import, the Studio attempts to find the main foreground object and automatically "
-            "draw a triangular guide grid over it. Manual drawing is optional. This is a 2D "
-            "reference overlay, not a finished 3D model."
+            "On import, the Studio attempts to isolate the main object and automatically "
+            "draw a triangular wireframe guide over it. Manual drawing is optional. This is a "
+            "2D guide mesh on the reference image, not a 3D model."
         )
         note.setObjectName("muted")
         note.setWordWrap(True)
@@ -528,7 +528,7 @@ class StudioWindow(QMainWindow):
                 )
             self.mode_value.setText("Detection needs clean background")
             self.statusBar().showMessage(
-                "Image loaded · Could not isolate a clear foreground; manual drawing is available"
+                "Auto frame not detected · Try a plain background or use manual drawing"
             )
             return
 
@@ -547,14 +547,15 @@ class StudioWindow(QMainWindow):
         if ys[-1] != sample_h - 1:
             ys.append(sample_h - 1)
 
-        nodes: dict[tuple[int, int], QPointF] = {}
+        node_points: list[QPointF] = []
         grid_ids: dict[tuple[int, int], int] = {}
         for gy, y in enumerate(ys):
             for gx, x in enumerate(xs):
                 if foreground[y * sample_w + x]:
-                    grid_ids[(gx, gy)] = len(nodes)
-                    nodes[(gx, gy)] = QPointF(x / max(1, sample_w - 1),
-                                             y / max(1, sample_h - 1))
+                    grid_ids[(gx, gy)] = len(node_points)
+                    node_points.append(
+                        QPointF(x / max(1, sample_w - 1), y / max(1, sample_h - 1))
+                    )
 
         edge_ids: set[tuple[int, int]] = set()
 
@@ -585,11 +586,7 @@ class StudioWindow(QMainWindow):
                         add_edge(tr, bl)
 
         ordered_ids = sorted(edge_ids)
-        auto_edges = [
-            (nodes[next(key for key, value in grid_ids.items() if value == a)],
-             nodes[next(key for key, value in grid_ids.items() if value == b)])
-            for a, b in ordered_ids
-        ]
+        auto_edges = [(node_points[a], node_points[b]) for a, b in ordered_ids]
         if len(auto_edges) < 20:
             if not silent:
                 QMessageBox.information(
@@ -633,7 +630,7 @@ class StudioWindow(QMainWindow):
         self.statusBar().showMessage("Last stroke undone")
 
     def clear_frame(self) -> None:
-        if not self.viewport.frame_strokes and self.viewport._active_stroke is None:
+        if not self.viewport.frame_strokes and not self.viewport.auto_edges and self.viewport._active_stroke is None:
             return
         answer = QMessageBox.question(
             self, "Clear frame", "Remove all frame strokes from this image?",
@@ -647,8 +644,8 @@ class StudioWindow(QMainWindow):
 
     def save_frame(self) -> None:
         strokes = self.viewport.frame_strokes
-        if not strokes:
-            QMessageBox.information(self, "No frame", "Draw at least one stroke before saving.")
+        if not strokes and not self.viewport.auto_edges:
+            QMessageBox.information(self, "No frame", "Run Auto-generate wireframe or draw a manual stroke first.")
             return
         default_name = (
             f"{self.image_path.stem}_frame.json" if self.image_path
