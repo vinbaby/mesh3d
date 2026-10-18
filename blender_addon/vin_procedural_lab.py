@@ -35,6 +35,7 @@ ANIMATION_ITEMS = [
     ("PULSE", "Scale Pulse", "Scale the geometry rhythmically"),
     ("TWIST", "Animated Twist", "Twist points around the Z axis over time"),
 ]
+ANIMATION_LABELS = {identifier: label for identifier, label, _description in ANIMATION_ITEMS}
 
 SHAPE_NAMES = {
     "TWISTED_COLUMN": "Twisted Column",
@@ -241,13 +242,14 @@ def _build_orbit_cage(settings, rng):
         normal.normalize()
         rotation = Vector((0.0, 0.0, 1.0)).rotation_difference(normal)
         loop_radius = radius * rng.uniform(0.72, 1.08)
+        ellipse_y = loop_radius * rng.uniform(0.94, 1.06)
         phase = rng.uniform(0.0, math.tau)
         points = []
         for index in range(samples):
             angle = math.tau * index / samples + phase
             p = Vector((
                 loop_radius * math.cos(angle),
-                loop_radius * rng.uniform(0.94, 1.06) * math.sin(angle),
+                ellipse_y * math.sin(angle),
                 0.0,
             ))
             p.rotate(rotation)
@@ -365,7 +367,7 @@ def _find_socket(sockets, name):
 
 
 def _build_animation_group(settings, animation_type):
-    friendly = dict(ANIMATION_ITEMS).get(animation_type, animation_type.title())
+    friendly = ANIMATION_LABELS.get(animation_type, animation_type.title())
     tree = bpy.data.node_groups.new(
         name=f"VINLAB · {friendly}", type="GeometryNodeTree"
     )
@@ -622,7 +624,7 @@ class VINLAB_OT_build_animation(bpy.types.Operator):
 
         self.report(
             {"INFO"},
-            f"Created {dict(ANIMATION_ITEMS)[settings.animation_type]} nodes on {obj.name}",
+            f"Created {ANIMATION_LABELS[settings.animation_type]} nodes on {obj.name}",
         )
         return {"FINISHED"}
 
