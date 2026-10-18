@@ -31,6 +31,15 @@ def test_procedural_shape_generators_are_present() -> None:
     assert "random.Random(settings.seed)" in source
 
 
+def test_scifi_scene_builder_creates_environment_assets() -> None:
+    source = _addon_source()
+    assert "class VINLAB_OT_generate_scifi_scene" in source
+    assert "def _build_scifi_scene" in source
+    assert "VINLAB Sci-Fi Camera" in source
+    assert "VINLAB Warm Rim" in source
+    assert 'scene["vinlab_scifi_scene_seed"]' in source
+
+
 def test_animation_builder_creates_real_geometry_nodes() -> None:
     source = _addon_source()
     assert "class VINLAB_OT_build_animation" in source
