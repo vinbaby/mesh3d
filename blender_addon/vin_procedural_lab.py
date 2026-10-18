@@ -380,7 +380,8 @@ def _build_animation_group(settings, animation_type):
         default=settings.animation_speed, min_value=0.0, max_value=20.0,
     )
     amount_label = "Amount"
-    amount_default = settings.animation_amount
+    amount_limit = 0.95 if animation_type == "PULSE" else 10.0
+    amount_default = min(settings.animation_amount, amount_limit)
     if animation_type == "TWIST":
         amount_label = "Twist Strength"
     elif animation_type == "PULSE":
@@ -389,7 +390,7 @@ def _build_animation_group(settings, animation_type):
         amount_label = "Height"
     amount_socket = _add_interface_socket(
         tree, amount_label, "INPUT", "NodeSocketFloat",
-        default=amount_default, min_value=0.0, max_value=10.0,
+        default=amount_default, min_value=0.0, max_value=amount_limit,
     )
     geo_out = _add_interface_socket(tree, "Geometry", "OUTPUT", "NodeSocketGeometry")
     nodes, links = tree.nodes, tree.links
@@ -613,7 +614,10 @@ class VINLAB_OT_build_animation(bpy.types.Operator):
             if speed_id:
                 modifier[speed_id] = settings.animation_speed
             if amount_id:
-                modifier[amount_id] = settings.animation_amount
+                modifier[amount_id] = min(
+                    settings.animation_amount,
+                    0.95 if settings.animation_type == "PULSE" else 10.0,
+                )
 
             obj["vinlab_animation_type"] = settings.animation_type
             obj["vinlab_animation_node_group"] = tree.name
@@ -669,7 +673,16 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.label(text="2 · Animation Builder", icon="NODETREE")
         box.prop(settings, "animation_type")
         box.prop(settings, "animation_speed")
-        box.prop(settings, "animation_amount")
+        if settings.animation_type == "BOB":
+            amount_caption = "Height"
+        elif settings.animation_type == "PULSE":
+            amount_caption = "Pulse Amount"
+        elif settings.animation_type == "TWIST":
+            amount_caption = "Twist Strength"
+        else:
+            amount_caption = None
+        if amount_caption:
+            box.prop(settings, "animation_amount", text=amount_caption)
         box.operator("vinlab.build_animation", text="Build Geometry Nodes", icon="NODETREE")
         box.label(text="Applies to the active object", icon="INFO")
 
