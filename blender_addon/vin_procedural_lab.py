@@ -1,10 +1,10 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
-    "description": "Generate procedural 3D shapes and build animated Geometry Nodes setups",
+    "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
     "category": "Add Mesh",
 }
 
@@ -27,7 +27,7 @@ SHAPE_ITEMS = [
     ("ORGANIC_BLOB", "Organic Blob", "A deformed UV-like closed surface"),
     ("CRYSTAL_CLUSTER", "Crystal Cluster", "A cluster of tapered, faceted crystals"),
     ("BRANCHING_FORM", "Branching Form", "A recursively generated tubular structure"),
-    ("FUTURE_SCULPTURE", "Future Sculpture", "Layered, twisted spatial loops and sculptural tubes"),
+    ("FUTURE_SCULPTURE", "Future Sculpture", "Layered twisted loops and organic sci-fi sculpture tubes"),
 ]
 
 ANIMATION_ITEMS = [
@@ -391,10 +391,12 @@ def _build_future_sculpture(settings, rng):
         ))
         length = unit * rng.uniform(0.28, 0.52)
         tendril_points = []
+        tendril_samples = max(12, samples // 3)
         drift_x, drift_y = rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4)
-        for index in range(max(12, samples // 3)):
-            t = index / (max(12, samples // 3) - 1)
-            sway = math.sin(t * math.pi * rng.uniform(1.0, 2.0) + phase) * unit * 0.11
+        sway_frequency = rng.uniform(1.0, 2.0)
+        for index in range(tendril_samples):
+            t = index / (tendril_samples - 1)
+            sway = math.sin(t * math.pi * sway_frequency + phase) * unit * 0.11
             tendril_points.append(Vector((
                 start.x + drift_x * length * t + sway,
                 start.y + drift_y * length * t - sway * 0.45,
@@ -427,7 +429,7 @@ def _new_mesh_object(context, name, vertices, faces, seed):
     )
     mesh.materials.append(material)
     obj.color = material.diffuse_color
-    smooth_surface = any(token in name for token in ("Organic Blob", "Orbital Cage", "Branching Form"))
+    smooth_surface = any(token in name for token in ("Organic Blob", "Orbital Cage", "Branching Form", "Future Sculpture"))
     for polygon in mesh.polygons:
         polygon.use_smooth = smooth_surface
 
@@ -612,7 +614,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.1.0"
+    tree["vinlab_version"] = "0.2.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
