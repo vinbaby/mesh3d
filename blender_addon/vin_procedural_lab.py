@@ -27,6 +27,7 @@ SHAPE_ITEMS = [
     ("ORGANIC_BLOB", "Organic Blob", "A deformed UV-like closed surface"),
     ("CRYSTAL_CLUSTER", "Crystal Cluster", "A cluster of tapered, faceted crystals"),
     ("BRANCHING_FORM", "Branching Form", "A recursively generated tubular structure"),
+    ("FUTURE_SCULPTURE", "Future Sculpture", "Layered, twisted spatial loops and sculptural tubes"),
 ]
 
 ANIMATION_ITEMS = [
@@ -43,6 +44,7 @@ SHAPE_NAMES = {
     "ORGANIC_BLOB": "Organic Blob",
     "CRYSTAL_CLUSTER": "Crystal Cluster",
     "BRANCHING_FORM": "Branching Form",
+    "FUTURE_SCULPTURE": "Future Sculpture",
 }
 
 
@@ -306,6 +308,107 @@ def _build_branching_form(settings, rng):
     return vertices, faces
 
 
+def _build_future_sculpture(settings, rng):
+    """Layer several different parametric tube families into one abstract sculpture."""
+    vertices, faces = [], []
+    unit = settings.size
+    samples = max(64, settings.detail * 6)
+    tube_sides = max(6, min(10, settings.detail // 2))
+    loop_count = 3 + min(3, settings.detail // 12)
+    phase = rng.uniform(0.0, math.tau)
+
+    # 1) Main flowing spatial loop: an asymmetric Lissajous / torus-knot hybrid.
+    radius = unit * rng.uniform(0.34, 0.46)
+    loops = rng.choice((2, 3, 4))
+    vertical_wave = rng.uniform(0.22, 0.42) * unit
+    points = []
+    for index in range(samples):
+        t = math.tau * index / samples
+        breathing = 1.0 + 0.15 * math.sin(3.0 * t + phase) + 0.06 * math.cos(5.0 * t)
+        x = radius * breathing * math.cos(loops * t + phase)
+        y = radius * (0.86 + 0.12 * math.cos(2.0 * t)) * math.sin((loops - 1) * t)
+        z = vertical_wave * math.sin(2.0 * t + phase * 0.7) + unit * 0.08 * math.sin(5.0 * t)
+        points.append(Vector((x, y, z)))
+    _append_tube(vertices, faces, points, unit * 0.024, sides=tube_sides, closed=True, cap_ends=False)
+
+    # 2) Tilted orbit rings. Each one gets a different plane and slightly lobed radius.
+    for ring_index in range(loop_count):
+        axis = Vector((
+            rng.uniform(-1.0, 1.0),
+            rng.uniform(-1.0, 1.0),
+            rng.uniform(-1.0, 1.0),
+        ))
+        if axis.length < 1e-5:
+            axis = Vector((0.0, 0.0, 1.0))
+        axis.normalize()
+        rotation = Vector((0.0, 0.0, 1.0)).rotation_difference(axis)
+        ring_radius = unit * rng.uniform(0.24, 0.49)
+        ring_phase = rng.uniform(0.0, math.tau)
+        ring_points = []
+        for index in range(samples):
+            t = math.tau * index / samples
+            r = ring_radius * (
+                1.0 + 0.09 * math.cos(3.0 * t + ring_phase)
+                + 0.035 * math.sin(5.0 * t)
+            )
+            point = Vector((
+                r * math.cos(t + ring_phase),
+                r * rng.uniform(0.97, 1.03) * math.sin(t + ring_phase),
+                unit * 0.10 * math.sin(2.0 * t + ring_phase),
+            ))
+            point.rotate(rotation)
+            ring_points.append(point)
+        _append_tube(
+            vertices, faces, ring_points,
+            unit * rng.uniform(0.010, 0.019),
+            sides=max(5, tube_sides - 2), closed=True, cap_ends=False,
+        )
+
+    # 3) A rising helical strand crossing the loops gives the silhouette height.
+    turns = rng.uniform(1.35, 2.6)
+    helix_points = []
+    for index in range(samples):
+        t = index / (samples - 1)
+        angle = math.tau * turns * t + phase
+        radius_here = unit * (0.16 + 0.16 * math.sin(math.pi * t))
+        helix_points.append(Vector((
+            radius_here * math.cos(angle),
+            radius_here * math.sin(angle),
+            unit * (t - 0.5) * 0.95,
+        )))
+    _append_tube(
+        vertices, faces, helix_points, unit * 0.017,
+        sides=max(5, tube_sides - 1), closed=False, cap_ends=True,
+    )
+
+    # 4) Add a small number of graceful off-axis tendrils, not a dense fractal.
+    for tendril_index in range(max(1, settings.detail // 14)):
+        start_angle = rng.uniform(0.0, math.tau)
+        start = Vector((
+            unit * 0.22 * math.cos(start_angle),
+            unit * 0.22 * math.sin(start_angle),
+            rng.uniform(-0.25, 0.25) * unit,
+        ))
+        length = unit * rng.uniform(0.28, 0.52)
+        tendril_points = []
+        drift_x, drift_y = rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4)
+        for index in range(max(12, samples // 3)):
+            t = index / (max(12, samples // 3) - 1)
+            sway = math.sin(t * math.pi * rng.uniform(1.0, 2.0) + phase) * unit * 0.11
+            tendril_points.append(Vector((
+                start.x + drift_x * length * t + sway,
+                start.y + drift_y * length * t - sway * 0.45,
+                start.z + length * (t - 0.35) + unit * 0.08 * math.sin(t * math.tau + phase),
+            )))
+        _append_tube(
+            vertices, faces, tendril_points,
+            unit * rng.uniform(0.008, 0.014),
+            sides=max(5, tube_sides - 2), closed=False, cap_ends=True,
+        )
+
+    return vertices, faces
+
+
 def _new_mesh_object(context, name, vertices, faces, seed):
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(vertices, [], faces)
@@ -558,6 +661,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             "ORGANIC_BLOB": _build_organic_blob,
             "CRYSTAL_CLUSTER": _build_crystal_cluster,
             "BRANCHING_FORM": _build_branching_form,
+            "FUTURE_SCULPTURE": _build_future_sculpture,
         }
         builder = builders.get(shape_type)
         if builder is None:
@@ -578,7 +682,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
 
         obj["vinlab_shape_type"] = shape_type
         obj["vinlab_seed"] = settings.seed
-        obj["vinlab_version"] = "0.1.0"
+        obj["vinlab_version"] = "0.2.0"
         self.report(
             {"INFO"},
             f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
@@ -660,7 +764,7 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.prop(settings, "seed")
         box.prop(settings, "detail")
         box.prop(settings, "size")
-        if settings.shape_type in {"RANDOM", "TWISTED_COLUMN"}:
+        if settings.shape_type in {"RANDOM", "TWISTED_COLUMN", "FUTURE_SCULPTURE"}:
             box.prop(settings, "twist")
         if settings.shape_type in {"RANDOM", "BRANCHING_FORM"}:
             box.prop(settings, "branch_depth")
