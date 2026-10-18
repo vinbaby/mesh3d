@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 4, 0),
+    "version": (0, 5, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -449,6 +449,43 @@ def _append_block(vertices, faces, center, dimensions, rotation_z=0.0, tilt_x=0.
     ))
 
 
+def _transform_local_offset(offset, rotation_z=0.0, tilt_x=0.0, tilt_y=0.0):
+    point = Vector(offset)
+    point.rotate(Quaternion(Vector((1.0,0.0,0.0)), tilt_x))
+    point.rotate(Quaternion(Vector((0.0,1.0,0.0)), tilt_y))
+    point.rotate(Quaternion(Vector((0.0,0.0,1.0)), rotation_z))
+    return point
+
+
+def _append_recessed_box(vertices, faces, center, dimensions, inset_size, recess_depth,
+                         rotation_z=0.0, tilt_x=0.0, tilt_y=0.0):
+    """Append a box shell with a real rectangular cavity on its -Y face."""
+    hx, hy, hz = (max(0.02, float(v))*0.5 for v in dimensions)
+    inset_w = min(max(0.05, float(inset_size[0])), hx*1.52)
+    inset_h = min(max(0.05, float(inset_size[1])), hz*1.52)
+    iw, ih = inset_w*0.5, inset_h*0.5
+    depth = min(max(0.015, float(recess_depth)), hy*0.62)
+    local = [
+        (-hx,-hy,-hz), (hx,-hy,-hz), (hx,-hy,hz), (-hx,-hy,hz),
+        (-hx,hy,-hz), (hx,hy,-hz), (hx,hy,hz), (-hx,hy,hz),
+        (-iw,-hy,-ih), (iw,-hy,-ih), (iw,-hy,ih), (-iw,-hy,ih),
+        (-iw,-hy+depth,-ih), (iw,-hy+depth,-ih),
+        (iw,-hy+depth,ih), (-iw,-hy+depth,ih),
+    ]
+    base = len(vertices)
+    origin = Vector(center)
+    for co in local:
+        vertices.append(tuple(origin + _transform_local_offset(co, rotation_z, tilt_x, tilt_y)))
+    face_defs = [
+        (0,4,5,1), (3,2,6,7), (0,3,7,4), (1,5,6,2), (4,5,6,7),
+        (0,1,9,8), (1,2,10,9), (2,3,11,10), (3,0,8,11),
+        (8,12,13,9), (9,13,14,10), (10,14,15,11), (11,15,12,8), (12,13,14,15),
+    ]
+    dark_face_indices = list(range(len(faces)+9, len(faces)+14))
+    faces.extend(tuple(base+index for index in face) for face in face_defs)
+    return dark_face_indices
+
+
 def _append_tapered_prism(vertices, faces, center, radius, height, sides, phase=0.0,
                           top_scale=0.78, top_shift=(0.0, 0.0)):
     """Append a faceted tapered prism with a shifted, rotated top ring."""
@@ -473,8 +510,9 @@ def _append_tapered_prism(vertices, faces, center, radius, height, sides, phase=
 
 
 def _build_cyber_module(settings, rng):
-    """A chunky, stacked, multilevel sci-fi artifact with panels and vent ribs."""
+    """Stacked sci-fi housing with genuinely recessed, dark front wells."""
     vertices, faces = [], []
+    dark_faces = []
     unit = settings.size
     tiers = rng.randint(3, 5)
     z = -unit * 0.56
@@ -482,7 +520,6 @@ def _build_cyber_module(settings, rng):
     base_depth = unit * rng.uniform(0.62, 0.88)
     tier_height = unit * rng.uniform(0.22, 0.31)
     yaw = rng.uniform(-0.35, 0.35)
-
     _append_block(vertices, faces, (0,0,z+tier_height*0.45),
                   (base_width*1.20,base_depth*1.20,tier_height*0.48), yaw)
     z += tier_height * 0.52
@@ -493,36 +530,63 @@ def _build_cyber_module(settings, rng):
         offset_x = rng.uniform(-0.10,0.10)*unit
         offset_y = rng.uniform(-0.08,0.08)*unit
         yaw += rng.uniform(-0.42,0.42)
-        _append_block(vertices,faces,(offset_x,offset_y,z+height*0.5),
-                      (width,depth,height),yaw,
-                      rng.uniform(-0.08,0.08),rng.uniform(-0.08,0.08))
+        tilt_x = rng.uniform(-0.08,0.08)
+        tilt_y = rng.uniform(-0.08,0.08)
+        body_center = (offset_x,offset_y,z+height*0.5)
+        panel_w = width*rng.uniform(0.36,0.54)
+        panel_h = height*rng.uniform(0.42,0.68)
+        recess = min(unit*rng.uniform(0.075,0.12),depth*0.26)
+        dark_faces.extend(_append_recessed_box(
+            vertices,faces,body_center,(width,depth,height),(panel_w,panel_h),recess,
+            yaw,tilt_x,tilt_y
+        ))
 
-        # Front-facing inset blocks and a contrasting panel make every module legible.
-        front_y = offset_y-depth*0.5-unit*0.018
-        panel_w = width*rng.uniform(0.34,0.56)
-        panel_h = height*rng.uniform(0.38,0.72)
-        panel_z = z+height*rng.uniform(0.38,0.62)
-        _append_block(vertices,faces,(offset_x,front_y,panel_z),
-                      (panel_w,unit*0.045,panel_h),yaw)
-        # Vent grille: a varying number of parallel narrow raised bars.
-        if rng.random() < 0.88:
+        # An inner panel sits inside the opening while leaving a dark cavity border visible.
+        plate_w = panel_w*rng.uniform(0.54,0.72)
+        plate_h = panel_h*rng.uniform(0.54,0.72)
+        plate_depth = unit*0.018
+        plate_local_y = -depth*0.5 + recess - plate_depth*0.5 - unit*0.004
+        plate_offset = _transform_local_offset((0.0,plate_local_y,0.0),yaw,tilt_x,tilt_y)
+        plate_center = (offset_x+plate_offset.x,offset_y+plate_offset.y,z+height*0.5+plate_offset.z)
+        _append_block(vertices,faces,plate_center,(plate_w,plate_depth,plate_h),yaw,tilt_x,tilt_y)
+
+        # Thin rails around the opening catch highlights without covering the inset.
+        front_local_y = -depth*0.5-unit*0.008
+        rail_t = unit*0.018
+        trim_specs = (
+            (-(panel_w*0.5+rail_t*0.5),front_local_y,0.0,(rail_t,unit*0.025,panel_h+rail_t*1.7)),
+            ((panel_w*0.5+rail_t*0.5),front_local_y,0.0,(rail_t,unit*0.025,panel_h+rail_t*1.7)),
+            (0.0,front_local_y,-panel_h*0.5-rail_t*0.5,(panel_w+rail_t*1.7,unit*0.025,rail_t)),
+            (0.0,front_local_y,panel_h*0.5+rail_t*0.5,(panel_w+rail_t*1.7,unit*0.025,rail_t)),
+        )
+        for lx,ly,lz,dims in trim_specs:
+            off = _transform_local_offset((lx,ly,lz),yaw,tilt_x,tilt_y)
+            c = (offset_x+off.x,offset_y+off.y,z+height*0.5+off.z)
+            _append_block(vertices,faces,c,dims,yaw,tilt_x,tilt_y)
+
+        # Vent slats are installed down inside the pocket.
+        if rng.random() < 0.9:
             rib_count = rng.randint(3,7)
-            rib_span = panel_w*0.78
+            rib_span = plate_w*0.82
+            rib_y = -depth*0.5 + recess - unit*0.022
             for rib in range(rib_count):
-                xx = offset_x - rib_span*0.5 + rib_span*(rib+0.5)/rib_count
-                _append_block(vertices,faces,(xx,front_y-unit*0.035,panel_z-panel_h*0.20),
-                              (max(unit*0.012,panel_w*0.035),unit*0.022,panel_h*0.42),
-                              yaw)
-        # Side tab / armor fin.
+                lx = -rib_span*0.5 + rib_span*(rib+0.5)/rib_count
+                off = _transform_local_offset((lx,rib_y,-plate_h*0.22),yaw,tilt_x,tilt_y)
+                c = (offset_x+off.x,offset_y+off.y,z+height*0.5+off.z)
+                _append_block(vertices,faces,c,
+                              (max(unit*0.012,plate_w*0.024),unit*0.022,plate_h*0.42),
+                              yaw,tilt_x,tilt_y)
+
         if rng.random() < 0.75:
             side = rng.choice((-1.0,1.0))
-            _append_block(vertices,faces,
-                          (offset_x+side*(width*0.5+unit*0.045),offset_y,z+height*0.52),
+            local_off = (side*(width*0.5+unit*0.045),0.0,height*0.02)
+            off = _transform_local_offset(local_off,yaw,tilt_x,tilt_y)
+            c = (offset_x+off.x,offset_y+off.y,z+height*0.5+off.z)
+            _append_block(vertices,faces,c,
                           (unit*0.10,depth*rng.uniform(0.28,0.58),height*rng.uniform(0.42,0.85)),
-                          yaw+rng.uniform(-0.12,0.12),rng.uniform(-0.12,0.12))
+                          yaw+rng.uniform(-0.12,0.12),tilt_x,tilt_y)
         z += height*0.83
 
-    # Offset crown and a few chunky antenna-like fins finish the silhouette.
     top_z = z + tier_height*0.12
     crown_w = base_width*rng.uniform(0.30,0.55)
     _append_block(vertices,faces,(rng.uniform(-0.12,0.12)*unit,0,top_z),
@@ -533,28 +597,31 @@ def _build_cyber_module(settings, rng):
                       (side*base_width*0.43,rng.uniform(-0.12,0.12)*unit,z-tier_height*0.04),
                       (unit*0.055,unit*0.09,tier_height*rng.uniform(0.45,0.85)),
                       yaw+side*rng.uniform(-0.18,0.18))
-    return vertices, faces
+    return vertices, faces, {"dark_faces": dark_faces}
 
 
 def _build_folded_ribbon(settings, rng):
-    """A broad, twisting four-sided ribbon sculpture with a deliberately graphic silhouette."""
+    """A twisting metal ribbon with a deep longitudinal channel and raised edge lips."""
     vertices, faces = [], []
+    dark_faces = []
     unit = settings.size
     samples = max(56, settings.detail*4)
     turns = rng.uniform(1.0,1.8)
     phase = rng.uniform(0.0,math.tau)
     width_base = unit*rng.uniform(0.16,0.25)
-    thickness = unit*rng.uniform(0.025,0.045)
+    thickness = unit*rng.uniform(0.035,0.055)
     centers = []
+    jitter = rng.uniform(-0.025,0.025)
     for index in range(samples):
         t = index/(samples-1)
         angle = math.tau*turns*t+phase
-        radial = unit*(0.30+0.13*math.sin(math.pi*t+rng.uniform(-0.025,0.025)))
+        radial = unit*(0.30+0.13*math.sin(math.pi*t+jitter))
         centers.append(Vector((
             radial*math.cos(angle)+unit*0.10*math.sin(math.tau*t),
             radial*math.sin(angle),
             unit*(t-0.5)*1.45+unit*0.16*math.sin(angle*0.72),
         )))
+    section_sides = 8
     for index, center in enumerate(centers):
         if index == 0:
             tangent = (centers[1]-centers[0]).normalized()
@@ -571,25 +638,28 @@ def _build_folded_ribbon(settings, rng):
         depth_axis = tangent.cross(width_axis).normalized()
         t = index/(samples-1)
         width = width_base*(0.68+0.48*math.sin(math.pi*t))
-        # Rectangle cross-section; sharp edges make the ribbon read like formed metal.
-        ring = (
-            center-width_axis*width-depth_axis*thickness,
-            center+width_axis*width-depth_axis*thickness,
-            center+width_axis*width+depth_axis*thickness,
-            center-width_axis*width+depth_axis*thickness,
+        # Cross-section includes a U-shaped channel and two raised lips.
+        profile = (
+            (-width,-thickness),(width,-thickness),(width,thickness),
+            (width*0.76,thickness),(width*0.57,-thickness*0.12),
+            (-width*0.57,-thickness*0.12),(-width*0.76,thickness),(-width,thickness),
         )
-        vertices.extend(tuple(point) for point in ring)
+        for side_offset, depth_offset in profile:
+            vertices.append(tuple(center+width_axis*side_offset+depth_axis*depth_offset))
     for index in range(samples-1):
-        for side in range(4):
-            a = index*4+side
-            b = index*4+(side+1)%4
-            c = (index+1)*4+(side+1)%4
-            d = (index+1)*4+side
+        for side in range(section_sides):
+            face_index = len(faces)
+            a = index*section_sides+side
+            b = index*section_sides+(side+1)%section_sides
+            c = (index+1)*section_sides+(side+1)%section_sides
+            d = (index+1)*section_sides+side
             faces.append((a,b,c,d))
-    faces.append((3,2,1,0))
-    end = (samples-1)*4
-    faces.append((end,end+1,end+2,end+3))
-    return vertices, faces
+            if side == 4:
+                dark_faces.append(face_index)
+    faces.append(tuple(range(section_sides-1,-1,-1)))
+    end = (samples-1)*section_sides
+    faces.append(tuple(end+side for side in range(section_sides)))
+    return vertices, faces, {"dark_faces": dark_faces}
 
 
 def _build_prism_reactor(settings, rng):
@@ -677,7 +747,7 @@ def _build_faceted_totem(settings, rng):
     return vertices, faces
 
 
-def _new_mesh_object(context, name, vertices, faces, seed):
+def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrides=None):
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
@@ -734,6 +804,10 @@ def _new_mesh_object(context, name, vertices, faces, seed):
             # Broad bands of color with deterministic small interruptions, not white-noise paint.
             band = (index // max(1, len(mesh.polygons)//12)) % len(palette)
             polygon.material_index = band if rng.random() < 0.62 else rng.choices(range(len(palette)), weights=weights, k=1)[0]
+        if face_material_overrides:
+            for polygon_index in face_material_overrides.get("dark_faces", []):
+                if 0 <= polygon_index < len(mesh.polygons):
+                    mesh.polygons[polygon_index].material_index = 0
         obj.color = palette[1][1] + (1.0,)
         for polygon in mesh.polygons:
             polygon.use_smooth = object_family in ("Folded Ribbon", "Prism Reactor")
@@ -743,10 +817,22 @@ def _new_mesh_object(context, name, vertices, faces, seed):
         bounds = [Vector(v.co) for v in mesh.vertices]
         if bounds:
             extents = [max(v[axis] for v in bounds)-min(v[axis] for v in bounds) for axis in range(3)]
-            bevel.width = max(0.001, max(extents)*0.006)
-            bevel.segments = 2
+            max_extent = max(extents)
+            min_extent = min(value for value in extents if value > 1e-6)
+            family_factor = {
+                "Cyber Module": 0.020,
+                "Folded Ribbon": 0.012,
+                "Prism Reactor": 0.012,
+                "Faceted Totem": 0.016,
+            }.get(object_family, 0.010)
+            bevel.width = max(0.003, min(max_extent*family_factor, min_extent*0.12))
+            bevel.segments = 3
             bevel.limit_method = "ANGLE"
+            if hasattr(bevel, "harden_normals"):
+                bevel.harden_normals = True
             obj.modifiers.new("Weighted normals", "WEIGHTED_NORMAL")
+            if hasattr(mesh, "use_auto_smooth"):
+                mesh.use_auto_smooth = True
     else:
         material = bpy.data.materials.new(name=f"VINLAB · {name}")
         material.diffuse_color = (
@@ -1163,7 +1249,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.4.0"
+    tree["vinlab_version"] = "0.5.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -1224,12 +1310,18 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             return {"CANCELLED"}
 
         try:
-            vertices, faces = builder(settings, rng)
+            build_result = builder(settings, rng)
+            if len(build_result) == 3:
+                vertices, faces, face_material_overrides = build_result
+            else:
+                vertices, faces = build_result
+                face_material_overrides = None
             if not vertices or not faces:
                 self.report({"ERROR"}, "The shape generator returned empty geometry")
                 return {"CANCELLED"}
             obj = _new_mesh_object(
-                context, f"VINLAB · {SHAPE_NAMES[shape_type]}", vertices, faces, settings.seed
+                context, f"VINLAB · {SHAPE_NAMES[shape_type]}",
+                vertices, faces, settings.seed, face_material_overrides
             )
         except Exception as exc:
             self.report({"ERROR"}, f"Shape generation failed: {exc}")
@@ -1237,7 +1329,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
 
         obj["vinlab_shape_type"] = shape_type
         obj["vinlab_seed"] = settings.seed
-        obj["vinlab_version"] = "0.4.0"
+        obj["vinlab_version"] = "0.5.0"
         self.report(
             {"INFO"},
             f"Generated {SHAPE_NAMES[shape_type]} · {len(vertices):,} verts / {len(faces):,} faces",
@@ -1264,7 +1356,7 @@ class VINLAB_OT_generate_scifi_scene(bpy.types.Operator):
             self.report({"ERROR"}, f"Sci-Fi scene generation failed: {exc}")
             return {"CANCELLED"}
         hero["vinlab_scifi_scene_seed"] = settings.seed
-        hero["vinlab_version"] = "0.4.0"
+        hero["vinlab_version"] = "0.5.0"
         self.report({"INFO"}, f"Generated sci-fi scene with {len(collection.objects)} objects · Seed {settings.seed}")
         return {"FINISHED"}
 
