@@ -382,9 +382,10 @@ class StudioWindow(QMainWindow):
         self.viewport.set_reference_image(self.image)
         self.draw_button.setEnabled(True)
         self.draw_button.setChecked(False)
-        self.undo_button.setEnabled(True)
-        self.clear_button.setEnabled(True)
-        self.save_button.setEnabled(True)
+        # Undo, clear and save stay disabled until at least one stroke exists.
+        self.undo_button.setEnabled(False)
+        self.clear_button.setEnabled(False)
+        self.save_button.setEnabled(False)
         self.mode_value.setText("Image view")
         self.statusBar().showMessage("Image loaded · Enable Draw frame to trace lines")
 
