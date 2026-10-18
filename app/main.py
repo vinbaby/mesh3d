@@ -469,12 +469,9 @@ class StudioWindow(QMainWindow):
 
         triangles: list[tuple[int, int, int]] = list(front_faces)
         triangles.extend(
-            (back_map_index, back_map_third, back_map_second)
-            for a, b, c in front_faces
-            for back_map_index, back_map_second, back_map_third
-            in ((back_map[a], back_map[b], back_map[c],),)
+            (back_map[a], back_map[c], back_map[b]) for a, b, c in front_faces
         )
-        # The back-face tuple above is reversed for consistent outward normals.
+        # Back faces are reversed for consistent outward normals.
         # Add side faces along each exposed front edge.
         for (a, b), count in edge_counts.items():
             if count != 1:
