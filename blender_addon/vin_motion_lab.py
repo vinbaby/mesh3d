@@ -515,6 +515,65 @@ def _build_field_scatter_group(settings):
     return tree, sockets
 
 
+def _surface_triangles(plane, depsgraph):
+    """Return world-space surface triangles weighted by their area."""
+    evaluated = plane.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    triangles = []
+    try:
+        mesh.calc_loop_triangles()
+        matrix_world = evaluated.matrix_world.copy()
+        total_area = 0.0
+        for triangle in mesh.loop_triangles:
+            a = matrix_world @ mesh.vertices[triangle.vertices[0]].co
+            b = matrix_world @ mesh.vertices[triangle.vertices[1]].co
+            c = matrix_world @ mesh.vertices[triangle.vertices[2]].co
+            cross = (b - a).cross(c - a)
+            area = cross.length * 0.5
+            if area <= 1e-10:
+                continue
+            triangles.append((a.copy(), b.copy(), c.copy(), cross.normalized(), area, total_area))
+            total_area += area
+        return triangles, total_area
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def _sample_surface_triangle(triangles, total_area, rng):
+    marker = rng.random() * total_area
+    triangle = triangles[-1]
+    for candidate in triangles:
+        if marker <= candidate[5] + candidate[4]:
+            triangle = candidate
+            break
+    a, b, c, normal, _area, _cumulative = triangle
+    u = math.sqrt(rng.random())
+    v = rng.random()
+    point = a * (1.0 - u) + b * (u * (1.0 - v)) + c * (u * v)
+    return point, normal.copy()
+
+
+def _insert_growth_keys(obj, final_scale, start_frame, growth_frames, rng):
+    """Animate scale from nearly zero to full size with a restrained spring overshoot."""
+    final_values = tuple(max(1e-4, float(abs(value))) for value in final_scale)
+    obj.scale = (0.0001, 0.0001, 0.0001)
+    obj.keyframe_insert(data_path="scale", frame=start_frame)
+    overshoot_frame = start_frame + max(1, int(round(growth_frames * 0.72)))
+    overshoot = rng.uniform(1.02, 1.10)
+    obj.scale = tuple(value * overshoot for value in final_values)
+    obj.keyframe_insert(data_path="scale", frame=overshoot_frame)
+    obj.scale = final_values
+    obj.keyframe_insert(data_path="scale", frame=start_frame + growth_frames)
+    if obj.animation_data and obj.animation_data.action:
+        action = obj.animation_data.action
+        curves = getattr(action, "fcurves", [])
+        for curve in curves:
+            for key in curve.keyframe_points:
+                key.interpolation = "BEZIER"
+                key.handle_left_type = "AUTO_CLAMPED"
+                key.handle_right_type = "AUTO_CLAMPED"
+
+
 class VINMOTION_Settings(bpy.types.PropertyGroup):
     animation_type: EnumProperty(name="Animation", items=ANIMATION_ITEMS, default="BOB")
     animation_speed: FloatProperty(name="Speed", default=1.0, min=0.0, max=20.0, precision=2)
