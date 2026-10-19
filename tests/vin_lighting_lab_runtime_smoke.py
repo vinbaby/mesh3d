@@ -89,7 +89,7 @@ def main() -> None:
             raise AssertionError(f"{preset}: world metadata does not match the preset")
         if scene.node_tree is None or scene.node_tree.nodes.get(addon.GLARE_NODE_NAME) is None:
             raise AssertionError(f"{preset}: owned Fog Glow compositor node is missing")
-        compositor = scene.node_tree.nodes.get("CompositorNodeComposite")
+        compositor = next((node for node in scene.node_tree.nodes if node.bl_idname == "CompositorNodeComposite"), None)
         if compositor is None or not compositor.inputs["Image"].is_linked:
             raise AssertionError(f"{preset}: composite output is not connected")
         if manual_object is None:
