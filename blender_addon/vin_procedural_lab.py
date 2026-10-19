@@ -1346,7 +1346,7 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             mesh.use_auto_smooth = True
         if object_family == "Alien Lattice" and "Shell" in name:
             solidify = obj.modifiers.new("Thin ceramic shell", "SOLIDIFY")
-            solidify.thickness = -0.018
+            solidify.thickness = -max(0.01, max(obj.dimensions) * 0.009)
             solidify.offset = -0.65
         bevel = obj.modifiers.new("Micro bevels", "BEVEL")
         bounds = [Vector(v.co) for v in mesh.vertices]
