@@ -1,0 +1,34 @@
+# VIN Motion Lab — Standalone Blender Add-on v0.1.0
+
+VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
+
+## Features
+
+### Object Animation
+Select any mesh or curve object, choose one mode, and click Build Animation Nodes:
+- Bob / Float — animated vertical offset
+- Continuous Spin — rotates geometry over time
+- Scale Pulse — rhythmic scaling
+- Animated Twist — spatially twists mesh points over time
+
+The generated Geometry Nodes group is editable. Play the timeline to preview Scene Time-driven motion.
+
+### Noise / Color Ramp Scatter
+1. Keep the objects you want to scatter in a dedicated Blender Collection. Use the original generated source parts; they remain separate objects.
+2. Add or select a mesh Plane and keep that Plane outside the source collection.
+3. In the VIN Motion sidebar tab, choose the source collection and click Build Scatter Nodes.
+4. Play the timeline. The graph uses Distribute Points on Faces, Collection Info, Instance on Points, 4D Noise, Color Ramp Alpha, a threshold comparison, and Set Position. It instances source objects with randomized orientation and scale; only the masked points move with the animated field.
+
+Controls include Density, Noise Scale, Mask Threshold, Field Motion, Field Speed, Min/Max Scale, and Scatter Seed. Adjust the Color Ramp in the Geometry Node Editor to change the affected zones.
+
+Note: scatter output uses Geometry Nodes instances, not separate scene objects. To edit source geometry, edit objects in the selected source collection. The original Plane and source objects are not destructively joined.
+
+## Install
+1. Download vin_motion_lab.py from this folder using GitHub's Download raw file action.
+2. In Blender, open Edit → Preferences → Add-ons, choose Install from Disk, select vin_motion_lab.py, then enable VIN Motion Lab.
+3. In the 3D Viewport, press N and select the VIN Motion tab.
+
+Leave VIN Procedural Lab installed if you still use its shape generator. The two add-ons use different panel tabs, scene settings, operators, and modifier names.
+
+## Compatibility
+Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises the four animation graphs and the scatter graph.
