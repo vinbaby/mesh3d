@@ -20,8 +20,8 @@ Note: scattered items are Geometry Nodes instances, so the procedural result is 
 ## 3. Sci-Fi Scene Builder
 An optional whole-environment generator separate from Random Object. It creates a layered reactor plaza, several towers, hard-surface panels, glowing trims, orbital rails, a camera and lights. Use Generate Scene or Random Scene when a whole environment is wanted.
 
-## 4. Animation Builder
-Builds editable Geometry Nodes for Bob / Float, Continuous Spin, Scale Pulse or Animated Twist on the active object. Preview by playing the timeline.
+## Animation and noise-mask nodes moved to VIN Motion Lab
+Object motion presets and Noise/Color Ramp scatter now have a dedicated, independent add-on: `vin_motion_lab.py`. See [VIN Motion Lab instructions](VIN_MOTION_LAB_README.md). The original VIN Procedural Lab panel stays focused on procedural objects and optional sci-fi scenes.
 
 ## Install / update
 1. Open the add-on source file on GitHub and use **Download raw file** to get `vin_procedural_lab.py`.
