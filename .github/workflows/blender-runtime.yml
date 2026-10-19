@@ -7,6 +7,7 @@ on:
       - "tests/blender_runtime_smoke.py"
       - "tests/vin_motion_lab_runtime_smoke.py"
       - "tests/vin_material_lab_runtime_smoke.py"
+      - "tests/vin_lighting_lab_runtime_smoke.py"
       - ".github/workflows/blender-runtime.yml"
   pull_request:
     paths:
@@ -45,3 +46,10 @@ jobs:
           set -euo pipefail
           blender --background --factory-startup --python tests/vin_material_lab_runtime_smoke.py 2>&1 | tee vin-material-runtime.log
           grep -q "VIN Material Lab Blender runtime smoke test passed." vin-material-runtime.log
+
+      - name: Test VIN Lighting Lab in background Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python tests/vin_lighting_lab_runtime_smoke.py 2>&1 | tee vin-lighting-runtime.log
+          grep -q "VIN Lighting Lab Blender runtime smoke test passed." vin-lighting-runtime.log
