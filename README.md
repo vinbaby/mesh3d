@@ -44,3 +44,8 @@ Alien Lattice was added to the procedural generator: a 3-layer organic shell / t
 
 
 VIN Motion Lab v0.8.1 adds eight transform-keyframed Object Motion Actions (Wobble/Tumble, Shockwave Reaction, Orbit/Revolve, Magnet Pull/Repel, Glitch/Teleport, Fold/Unfold, Dissolve/Assemble and Wave Cascade) in the separate VIN Actions sidebar tab. Geometry Nodes motion presets remain in VIN Animate.
+
+
+## Separate add-on: VIN Material Lab
+
+Color palettes and procedural surface textures are kept in a standalone shader-node add-on so material work stays separate from shape generation and motion. Download [vin_material_lab.py](blender_addon/vin_material_lab.py) and follow [VIN_MATERIAL_LAB_README.md](blender_addon/VIN_MATERIAL_LAB_README.md). It includes Cyber Amber, Monochrome + Gold, Neon Prism, Titanium Sunset, Porcelain Champagne and Void Ember palettes, plus Noise/Color Ramp, Brushed Metal, Carbon Fiber, Hex Cells, Pitted/Porous and Circuit Line node patterns.
