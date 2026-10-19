@@ -21,7 +21,13 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert '"name": "VIN Motion Lab"' in source
     assert 'bl_category = "VIN Motion"' in source
     assert "class VINMOTION_OT_build_animation" in source
+    assert "class VINMOTION_OT_surface_spawn" in source
     assert "class VINMOTION_OT_build_scatter" in source
+    assert "def _surface_triangles" in source
+    assert "def _insert_growth_keys" in source
+    assert 'name="Phase"' in source
+    assert "Spawn Separate Objects" in source
+    assert "spawn.animation_type" not in source
     assert "class VINMOTION_PT_main" in source
     assert "GeometryNodeDistributePointsOnFaces" in source
     assert "ShaderNodeTexNoise" in source
