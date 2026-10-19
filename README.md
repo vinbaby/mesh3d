@@ -49,3 +49,8 @@ VIN Motion Lab v0.8.1 adds eight transform-keyframed Object Motion Actions (Wobb
 ## Separate add-on: VIN Material Lab
 
 Color palettes and procedural surface textures are kept in a standalone shader-node add-on so material work stays separate from shape generation and motion. Download [vin_material_lab.py](blender_addon/vin_material_lab.py) and follow [VIN_MATERIAL_LAB_README.md](blender_addon/VIN_MATERIAL_LAB_README.md). It includes Cyber Amber, Monochrome + Gold, Neon Prism, Titanium Sunset, Porcelain Champagne and Void Ember palettes, plus Noise/Color Ramp, Brushed Metal, Carbon Fiber, Hex Cells, Pitted/Porous and Circuit Line node patterns.
+
+
+## VIN Material Lab v0.2.0 — general materials and texture nodes
+
+The separate [VIN Material Lab add-on](blender_addon/vin_material_lab.py) now has 12 palettes, 16 surface finishes (including clear/frosted glass, clear/matte plastic, rubber, fabric, leather, wood, stone and paper), and 12 procedural texture patterns. It creates editable Shader Editor node graphs and remains separate from VIN Procedural Lab and VIN Motion Lab. See [the Material Lab guide](blender_addon/VIN_MATERIAL_LAB_README.md).
