@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 8, 0),
+    "version": (0, 9, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -1228,6 +1228,233 @@ def _build_spike_bloom(settings, rng):
     return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
 
 
+
+COLOR_THEME_COLORS = {
+    "CYBER_AMBER": {
+        "dark": (0.012, 0.022, 0.042), "light": (0.68, 0.76, 0.84),
+        "cool": (0.015, 0.34, 0.78), "warm": (1.0, 0.22, 0.025),
+        "violet": (0.24, 0.08, 0.46), "neutral": (0.20, 0.29, 0.39),
+    },
+    "MONO_GOLD": {
+        "dark": (0.008, 0.012, 0.018), "light": (0.72, 0.77, 0.81),
+        "cool": (0.30, 0.35, 0.41), "warm": (0.64, 0.39, 0.15),
+        "violet": (0.34, 0.30, 0.27), "neutral": (0.17, 0.20, 0.23),
+    },
+    "NEON_PRISM": {
+        "dark": (0.006, 0.008, 0.025), "light": (0.42, 0.63, 0.78),
+        "cool": (0.005, 0.62, 0.98), "warm": (0.98, 0.025, 0.42),
+        "violet": (0.74, 0.025, 0.86), "neutral": (0.12, 0.17, 0.29),
+    },
+    "TITANIUM_SUNSET": {
+        "dark": (0.018, 0.035, 0.065), "light": (0.66, 0.76, 0.84),
+        "cool": (0.025, 0.31, 0.72), "warm": (1.0, 0.27, 0.025),
+        "violet": (0.24, 0.15, 0.27), "neutral": (0.20, 0.28, 0.36),
+    },
+    "PORCELAIN_CHAMPAGNE": {
+        "dark": (0.035, 0.040, 0.048), "light": (0.88, 0.86, 0.79),
+        "cool": (0.49, 0.55, 0.58), "warm": (0.72, 0.49, 0.25),
+        "violet": (0.40, 0.34, 0.28), "neutral": (0.36, 0.37, 0.36),
+    },
+    "VOID_EMBER": {
+        "dark": (0.004, 0.006, 0.010), "light": (0.39, 0.43, 0.48),
+        "cool": (0.11, 0.15, 0.20), "warm": (0.95, 0.12, 0.018),
+        "violet": (0.20, 0.06, 0.055), "neutral": (0.09, 0.11, 0.14),
+    },
+}
+
+
+def _color_role(label, base_color=None):
+    text = str(label).lower()
+    if any(word in text for word in ("graphite", "black", "dark", "void", "obsidian", "substrate", "basalt", "frame", "seam", "gunmetal", "shadow")):
+        return "dark"
+    if any(word in text for word in ("violet", "purple", "magenta", "pink", "fuchsia")):
+        return "violet"
+    if any(word in text for word in ("cyan", "blue", "azure", "cobalt", "teal", "ion", "ice", "ocean", "steel blue")):
+        return "cool"
+    if any(word in text for word in ("orange", "amber", "gold", "copper", "champagne", "yellow", "plasma", "bead", "signal", "ember", "bronze")):
+        return "warm"
+    if any(word in text for word in ("silver", "alloy", "titanium", "ceramic", "porcelain", "white", "pale", "machined", "bright", "shell", "pearl", "chrome", "steel")):
+        return "light"
+    if base_color is not None:
+        rgb = tuple(float(v) for v in base_color[:3])
+        luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+        if luminance < 0.09:
+            return "dark"
+        max_value, min_value = max(rgb), min(rgb)
+        if max_value - min_value > 0.14:
+            if rgb[0] > rgb[2] * 1.35 and rgb[0] > rgb[1] * 1.15:
+                return "warm"
+            if rgb[2] > rgb[0] * 1.25:
+                return "cool"
+        if luminance > 0.58:
+            return "light"
+    return "neutral"
+
+
+def _theme_color(style, role):
+    return COLOR_THEME_COLORS.get(style, COLOR_THEME_COLORS["CYBER_AMBER"]).get(role, COLOR_THEME_COLORS["CYBER_AMBER"]["neutral"])
+
+
+def _theme_accent(style, role):
+    accents = {
+        "CYBER_AMBER": {"dark": (0.98, 0.27, 0.025), "light": (0.95, 0.47, 0.075), "cool": (1.0, 0.20, 0.015), "warm": (0.01, 0.52, 0.95), "violet": (0.0, 0.56, 0.95), "neutral": (0.95, 0.35, 0.04)},
+        "MONO_GOLD": {"dark": (0.68, 0.40, 0.15), "light": (0.86, 0.59, 0.27), "cool": (0.72, 0.47, 0.24), "warm": (0.92, 0.66, 0.32), "violet": (0.78, 0.52, 0.24), "neutral": (0.82, 0.54, 0.22)},
+        "NEON_PRISM": {"dark": (0.0, 0.64, 1.0), "light": (0.98, 0.025, 0.52), "cool": (0.92, 0.025, 0.72), "warm": (0.0, 0.76, 1.0), "violet": (1.0, 0.24, 0.04), "neutral": (0.0, 0.66, 0.98)},
+        "TITANIUM_SUNSET": {"dark": (0.04, 0.43, 0.85), "light": (1.0, 0.36, 0.035), "cool": (1.0, 0.31, 0.02), "warm": (0.01, 0.44, 0.92), "violet": (1.0, 0.32, 0.04), "neutral": (0.98, 0.30, 0.02)},
+        "PORCELAIN_CHAMPAGNE": {"dark": (0.78, 0.53, 0.29), "light": (0.72, 0.51, 0.30), "cool": (0.84, 0.62, 0.38), "warm": (0.94, 0.72, 0.44), "violet": (0.82, 0.62, 0.41), "neutral": (0.85, 0.62, 0.34)},
+        "VOID_EMBER": {"dark": (0.98, 0.09, 0.012), "light": (0.95, 0.12, 0.02), "cool": (1.0, 0.15, 0.015), "warm": (1.0, 0.23, 0.025), "violet": (0.82, 0.035, 0.012), "neutral": (0.95, 0.12, 0.02)},
+    }
+    return accents.get(style, accents["CYBER_AMBER"]).get(role, (1.0, 0.25, 0.02))
+
+
+def _vary_rgb(color, seed, amount):
+    rng = random.Random(int(seed) & 0xFFFFFFFF)
+    factor = rng.uniform(max(0.0, 1.0 - amount), 1.0 + amount)
+    return tuple(max(0.0, min(1.0, float(channel) * factor)) for channel in color[:3])
+
+
+def _clear_vin_color_nodes(material, shader, restore=True):
+    if material is None or not material.use_nodes or shader is None:
+        return
+    nodes = material.node_tree.nodes
+    base = shader.inputs.get("Base Color")
+    mix = nodes.get("VIN Color · Accent Mix")
+    if restore and mix is not None and base is not None:
+        old_source = next(iter(mix.inputs["Color1"].links), None)
+        old_default = tuple(mix.inputs["Color1"].default_value)
+        for link in list(base.links):
+            material.node_tree.links.remove(link)
+        if old_source is not None:
+            material.node_tree.links.new(old_source.from_socket, base)
+        else:
+            base.default_value = old_default
+    for node in list(nodes):
+        if node.name.startswith("VIN Color · ") or node.label.startswith("VIN Color · "):
+            nodes.remove(node)
+
+
+def _apply_material_color_pattern(material, base_color, accent_color, settings):
+    if material is None:
+        return
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    shader = nodes.get("Principled BSDF")
+    if shader is None:
+        return
+    base = shader.inputs.get("Base Color")
+    if base is None:
+        return
+
+    if settings.color_pattern != "NOISE_RAMP":
+        _clear_vin_color_nodes(material, shader, restore=True)
+        if not base.is_linked:
+            base.default_value = (*base_color, 1.0)
+        return
+
+    mix = nodes.get("VIN Color · Accent Mix")
+    if mix is None:
+        original_link = next(iter(base.links), None)
+        original_default = tuple(base.default_value)
+        mix = nodes.new("ShaderNodeMixRGB")
+        mix.name = "VIN Color · Accent Mix"
+        mix.label = "VIN Color · Procedural Accent"
+        mix.blend_type = "MIX"
+        if original_link is not None:
+            links.new(original_link.from_socket, mix.inputs["Color1"])
+            links.remove(original_link)
+        else:
+            mix.inputs["Color1"].default_value = original_default
+        for link in list(base.links):
+            links.remove(link)
+        links.new(mix.outputs["Color"], base)
+
+    mix.inputs["Color2"].default_value = (*accent_color, 1.0)
+    if not mix.inputs["Color1"].is_linked:
+        mix.inputs["Color1"].default_value = (*base_color, 1.0)
+
+    coord = nodes.get("VIN Color · Coordinates")
+    if coord is None:
+        coord = nodes.new("ShaderNodeTexCoord")
+        coord.name = "VIN Color · Coordinates"
+        coord.label = "VIN Color · Coordinates"
+        coord.location = (-760, 120)
+    noise = nodes.get("VIN Color · Noise")
+    if noise is None:
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.name = "VIN Color · Noise"
+        noise.label = "VIN Color · Noise"
+        noise.noise_dimensions = "3D"
+        noise.location = (-540, 120)
+    noise.inputs["Scale"].default_value = settings.color_noise_scale
+    ramp = nodes.get("VIN Color · Ramp")
+    if ramp is None:
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.name = "VIN Color · Ramp"
+        ramp.label = "VIN Color · Accent Mask"
+        ramp.location = (-290, 120)
+    contrast = max(0.05, min(0.49, settings.color_ramp_contrast))
+    low = 0.5 - contrast
+    high = 0.5 + contrast
+    elements = ramp.color_ramp.elements
+    elements[0].position = low
+    elements[0].color = (0.0, 0.0, 0.0, 0.0)
+    elements[1].position = high
+    elements[1].color = (1.0, 1.0, 1.0, settings.color_accent_strength)
+    tex_output = coord.outputs.get("Generated") or coord.outputs.get("Object")
+    if tex_output is not None and not noise.inputs["Vector"].is_linked:
+        links.new(tex_output, noise.inputs["Vector"])
+    if not ramp.inputs["Fac"].is_linked:
+        links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    if not mix.inputs["Fac"].is_linked:
+        links.new(ramp.outputs["Alpha"], mix.inputs["Fac"])
+    mix.location = (10, 120)
+    shader.location = (280, 120)
+
+
+def _material_base_color(material):
+    if material is None:
+        return (0.25, 0.28, 0.32)
+    if material.use_nodes:
+        shader = material.node_tree.nodes.get("Principled BSDF")
+        if shader is not None:
+            base = shader.inputs.get("Base Color")
+            if base is not None and not base.is_linked:
+                return tuple(base.default_value[:3])
+    return tuple(material.diffuse_color[:3])
+
+
+def _apply_material_theme(material, settings, seed):
+    base_original = _material_base_color(material)
+    role = _color_role(material.name, base_original)
+    base_color = _vary_rgb(_theme_color(settings.color_style, role), seed, settings.color_variation)
+    accent_color = _theme_accent(settings.color_style, role)
+    material.diffuse_color = (*base_color, 1.0)
+    material.use_nodes = True
+    shader = material.node_tree.nodes.get("Principled BSDF")
+    if shader is None:
+        shader = material.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+        output = next((node for node in material.node_tree.nodes if node.bl_idname == "ShaderNodeOutputMaterial"), None)
+        if output is None:
+            output = material.node_tree.nodes.new("ShaderNodeOutputMaterial")
+        if not output.inputs["Surface"].is_linked:
+            material.node_tree.links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+    base = shader.inputs.get("Base Color")
+    if base is not None and not base.is_linked:
+        base.default_value = (*base_color, 1.0)
+    shader.inputs["Metallic"].default_value = settings.color_metallic
+    shader.inputs["Roughness"].default_value = settings.color_roughness
+    emission_color_socket = shader.inputs.get("Emission Color") or shader.inputs.get("Emission")
+    emission_strength_socket = shader.inputs.get("Emission Strength")
+    label = material.name.lower()
+    emissive_role = any(word in label for word in ("plasma", "signal", "trace", "beacon", "glow", "core", "micro light", "energy seam"))
+    if emission_color_socket is not None and emission_strength_socket is not None:
+        emission_color_socket.default_value = (*accent_color, 1.0)
+        emission_strength_socket.default_value = settings.color_glow if emissive_role else 0.0
+    _apply_material_color_pattern(material, base_color, accent_color, settings)
+
+
+
 def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrides=None):
     mesh = bpy.data.meshes.new(name + " Mesh")
     mesh.from_pydata(vertices, [], faces)
@@ -1312,9 +1539,22 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             ],
         }
         palette = palettes[object_family]
-        for label, color, metallic, roughness, emission, strength in palette:
+        color_settings = getattr(context.scene, "vinlab_settings", None)
+        if color_settings is not None and color_settings.color_style != "CYBER_AMBER":
+            styled_palette = []
+            for palette_index, (label, color, metallic, roughness, emission, strength) in enumerate(palette):
+                role = _color_role(label, color)
+                styled_color = _vary_rgb(_theme_color(color_settings.color_style, role), color_settings.color_seed + seed * 17 + palette_index, color_settings.color_variation)
+                styled_emission = _theme_accent(color_settings.color_style, role) if emission is not None else None
+                styled_strength = color_settings.color_glow if emission is not None else 0.0
+                styled_palette.append((label, styled_color, metallic, roughness, styled_emission, styled_strength))
+            palette = styled_palette
+        for palette_index, (label, color, metallic, roughness, emission, strength) in enumerate(palette):
             material = _scene_material(f"VINLAB · {object_family} · {label}", color, metallic, roughness, emission, strength)
             mesh.materials.append(material)
+            if color_settings is not None:
+                accent_role = _color_role(label, color)
+                _apply_material_color_pattern(material, color, _theme_accent(color_settings.color_style, accent_role), color_settings)
         weight_map = {
             "Cyber Module": [3,4,2,2,1,3],
             "Folded Ribbon": [3,5,2,2,1],
@@ -1382,7 +1622,19 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             rng.uniform(0.3, 1.0),
             1.0,
         )
+        color_settings = getattr(context.scene, "vinlab_settings", None)
+        if color_settings is not None and color_settings.color_style != "CYBER_AMBER":
+            role = _color_role(name, material.diffuse_color)
+            styled_color = _vary_rgb(_theme_color(color_settings.color_style, role), color_settings.color_seed + seed, color_settings.color_variation)
+            material.diffuse_color = (*styled_color, 1.0)
+            if material.use_nodes:
+                shader = material.node_tree.nodes.get("Principled BSDF")
+                if shader is not None and not shader.inputs["Base Color"].is_linked:
+                    shader.inputs["Base Color"].default_value = (*styled_color, 1.0)
         mesh.materials.append(material)
+        if color_settings is not None:
+            role = _color_role(name, material.diffuse_color)
+            _apply_material_color_pattern(material, tuple(material.diffuse_color[:3]), _theme_accent(color_settings.color_style, role), color_settings)
         obj.color = material.diffuse_color
         smooth_surface = any(token in name for token in ("Organic Blob", "Orbital Cage", "Branching Form", "Future Sculpture"))
         for polygon in mesh.polygons:
@@ -1854,7 +2106,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.8.0"
+    tree["vinlab_version"] = "0.9.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -2026,7 +2278,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinlab_version"] = "0.8.0"
+    tree["vinlab_version"] = "0.9.0"
     tree["vinlab_feature"] = "noise_color_ramp_scatter"
     tree["vinlab_source_collection"] = collection.name
     return tree, sockets
@@ -2039,6 +2291,35 @@ class VINLAB_Settings(bpy.types.PropertyGroup):
     seed: IntProperty(name="Seed", default=17, min=0, max=9999999)
     detail: IntProperty(name="Detail", description="Higher values add more geometry", default=18, min=6, max=48)
     size: FloatProperty(name="Size", default=2.0, min=0.2, max=20.0, precision=2)
+    color_style: EnumProperty(
+        name="Color Style",
+        description="Art-directed sci-fi palette applied to new shapes and selected objects",
+        items=[
+            ("CYBER_AMBER", "Cyber Amber", "Blue-black titanium with cyan and orange accents"),
+            ("MONO_GOLD", "Monochrome + Gold", "Black, silver and warm champagne-gold accents"),
+            ("NEON_PRISM", "Neon Prism", "Electric cyan, magenta and violet on a dark base"),
+            ("TITANIUM_SUNSET", "Titanium Sunset", "Cold titanium blue with orange and amber highlights"),
+            ("PORCELAIN_CHAMPAGNE", "Porcelain Champagne", "Ivory ceramic, dark frame and champagne metal"),
+            ("VOID_EMBER", "Void Ember", "Black metal, gunmetal and glowing ember orange"),
+        ],
+        default="CYBER_AMBER",
+    )
+    color_pattern: EnumProperty(
+        name="Color Pattern",
+        items=[
+            ("SOLID", "Material Blocks", "Use clean palette-colored material regions"),
+            ("NOISE_RAMP", "Noise / Color Ramp", "Use Noise and a Color Ramp to reveal accent color patches"),
+        ],
+        default="SOLID",
+    )
+    color_seed: IntProperty(name="Color Seed", default=37, min=0, max=9999999)
+    color_variation: FloatProperty(name="Shade Variation", default=0.08, min=0.0, max=0.35, precision=2)
+    color_noise_scale: FloatProperty(name="Noise Scale", default=3.2, min=0.05, max=50.0, precision=2)
+    color_ramp_contrast: FloatProperty(name="Ramp Contrast", default=0.18, min=0.05, max=0.49, precision=2)
+    color_accent_strength: FloatProperty(name="Accent Strength", default=0.55, min=0.0, max=1.0, precision=2)
+    color_metallic: FloatProperty(name="Metallic", default=0.72, min=0.0, max=1.0, precision=2)
+    color_roughness: FloatProperty(name="Roughness", default=0.24, min=0.02, max=1.0, precision=2)
+    color_glow: FloatProperty(name="Accent Glow", default=2.5, min=0.0, max=20.0, precision=2)
     twist: FloatProperty(name="Twist", description="Twist strength for twisted columns", default=2.6, min=-12.0, max=12.0, precision=2)
     branch_depth: IntProperty(name="Branch Depth", default=3, min=1, max=4)
     separate_parts: BoolProperty(
@@ -2112,7 +2393,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
                     )
                     layer_obj["vinlab_shape_type"] = shape_type
                     layer_obj["vinlab_seed"] = settings.seed
-                    layer_obj["vinlab_version"] = "0.8.0"
+                    layer_obj["vinlab_version"] = "0.9.0"
                     layer_obj["vinlab_lattice_layer"] = layer_name
                     created_parts.append(layer_obj)
                 bpy.ops.object.select_all(action="DESELECT")
@@ -2166,7 +2447,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
                     part.data.name = part.name + " Mesh"
             part["vinlab_shape_type"] = shape_type
             part["vinlab_seed"] = settings.seed
-            part["vinlab_version"] = "0.8.0"
+            part["vinlab_version"] = "0.9.0"
         if parts:
             context.view_layer.objects.active = obj if obj in parts else parts[0]
         self.report(
@@ -2322,7 +2603,7 @@ class VINLAB_OT_build_field_scatter(bpy.types.Operator):
                     modifier[identifier] = value
             obj["vinlab_scatter_collection"] = settings.scatter_collection.name
             obj["vinlab_scatter_mask"] = "Noise Texture -> Color Ramp -> Threshold -> Set Position Selection"
-            obj["vinlab_version"] = "0.8.0"
+            obj["vinlab_version"] = "0.9.0"
             context.view_layer.update()
         except Exception as exc:
             self.report({"ERROR"}, f"Noise / Color Ramp Scatter failed: {exc}")
@@ -2342,6 +2623,104 @@ class VINLAB_OT_randomize_seed(bpy.types.Operator):
         return result
 
 
+class VINLAB_OT_apply_color_style(bpy.types.Operator):
+    bl_idname = "vinlab.apply_color_style"
+    bl_label = "Apply Color Style"
+    bl_description = "Recolor selected objects with a curated sci-fi palette and optional Noise/Color Ramp accents"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinlab_settings
+        targets = [obj for obj in context.selected_objects if obj.type in {"MESH", "CURVE", "FONT", "SURFACE"}]
+        if not targets:
+            self.report({"ERROR"}, "Select one or more objects with geometry first")
+            return {"CANCELLED"}
+        touched = 0
+        try:
+            for object_index, obj in enumerate(targets):
+                if obj.data is not None and obj.data.users > 1:
+                    obj.data = obj.data.copy()
+                if len(obj.material_slots) == 0:
+                    material = bpy.data.materials.new(name=f"VIN Color · {obj.name}")
+                    obj.data.materials.append(material)
+                for slot_index, slot in enumerate(obj.material_slots):
+                    material = slot.material
+                    if material is None:
+                        material = bpy.data.materials.new(name=f"VIN Color · {obj.name} · {slot_index + 1}")
+                        slot.material = material
+                    elif material.users > 1:
+                        material = material.copy()
+                        material.name = material.name + " · " + obj.name
+                        slot.material = material
+                    role = _color_role(material.name, _material_base_color(material))
+                    base_color = _vary_rgb(
+                        _theme_color(settings.color_style, role),
+                        settings.color_seed + object_index * 97 + slot_index * 13,
+                        settings.color_variation,
+                    )
+                    accent_color = _theme_accent(settings.color_style, role)
+                    material.diffuse_color = (*base_color, 1.0)
+                    material.use_nodes = True
+                    shader = material.node_tree.nodes.get("Principled BSDF")
+                    if shader is None:
+                        shader = material.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+                        output = next((node for node in material.node_tree.nodes if node.bl_idname == "ShaderNodeOutputMaterial"), None)
+                        if output is None:
+                            output = material.node_tree.nodes.new("ShaderNodeOutputMaterial")
+                        if not output.inputs["Surface"].is_linked:
+                            material.node_tree.links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+                    base = shader.inputs.get("Base Color")
+                    if base is not None and not base.is_linked:
+                        base.default_value = (*base_color, 1.0)
+                    shader.inputs["Metallic"].default_value = settings.color_metallic
+                    shader.inputs["Roughness"].default_value = settings.color_roughness
+                    emission_color_socket = shader.inputs.get("Emission Color") or shader.inputs.get("Emission")
+                    emission_strength_socket = shader.inputs.get("Emission Strength")
+                    label = material.name.lower()
+                    emissive_role = any(word in label for word in ("plasma", "signal", "trace", "beacon", "glow", "core", "micro light", "energy seam"))
+                    if emission_color_socket is not None and emission_strength_socket is not None:
+                        emission_color_socket.default_value = (*accent_color, 1.0)
+                        emission_strength_socket.default_value = settings.color_glow if emissive_role else 0.0
+                    _apply_material_color_pattern(material, base_color, accent_color, settings)
+                    touched += 1
+                obj.color = (*_theme_color(settings.color_style, _color_role(obj.name)), 1.0)
+        except Exception as exc:
+            self.report({"ERROR"}, f"Color assignment stopped after {touched} material(s): {exc}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Applied {settings.color_style.replace('_', ' ').title()} to {len(targets)} object(s), {touched} material slots")
+        return {"FINISHED"}
+
+
+class VINLAB_PT_color(bpy.types.Panel):
+    bl_label = "Sci-Fi Color Lab"
+    bl_idname = "VINLAB_PT_color"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Color"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinlab_settings
+        box = layout.box()
+        box.label(text="Art-Directed Palette", icon="COLOR")
+        box.prop(settings, "color_style")
+        box.prop(settings, "color_seed")
+        box.prop(settings, "color_variation")
+        box.prop(settings, "color_pattern")
+        if settings.color_pattern == "NOISE_RAMP":
+            box.prop(settings, "color_noise_scale")
+            box.prop(settings, "color_ramp_contrast")
+            box.prop(settings, "color_accent_strength")
+            box.label(text="Noise mask reveals accent color patches over the material base.")
+        row = box.row(align=True)
+        row.prop(settings, "color_metallic")
+        row.prop(settings, "color_roughness")
+        box.prop(settings, "color_glow")
+        box.operator("vinlab.apply_color_style", text="Apply to Selected", icon="MATERIAL")
+        layout.separator()
+        layout.label(text="New procedural shapes inherit the active palette.")
+
+
 class VINLAB_PT_main(bpy.types.Panel):
     bl_label = "VIN Procedural Lab"
     bl_idname = "VINLAB_PT_main"
@@ -2359,6 +2738,7 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.prop(settings, "seed")
         box.prop(settings, "detail")
         box.prop(settings, "size")
+        box.label(text="Color palette: " + settings.color_style.replace("_", " ").title())
         box.prop(settings, "separate_parts")
         if settings.shape_type == "ALIEN_LATTICE":
             box.label(text="Generates 3 editable layers: shell, triangular frame, beads.")
@@ -2385,6 +2765,8 @@ class VINLAB_PT_main(bpy.types.Panel):
 CLASSES = (
     VINLAB_Settings,
     VINLAB_OT_generate_shape,
+    VINLAB_OT_apply_color_style,
+    VINLAB_PT_color,
     VINLAB_OT_build_animation,
     VINLAB_OT_randomize_seed,
     VINLAB_OT_separate_loose_parts,
