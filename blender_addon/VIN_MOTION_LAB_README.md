@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.1.0
+# VIN Motion Lab — Standalone Blender Add-on v0.2.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -10,6 +10,9 @@ Select any mesh or curve object, choose one mode, and click Build Animation Node
 - Continuous Spin — rotates geometry over time
 - Scale Pulse — rhythmic scaling
 - Animated Twist — spatially twists mesh points over time
+- **Living Entity** — subdivides the input surface, animates a 4D Noise field, maps it through an editable Color Ramp mask, displaces selected regions in noise directions and along surface normals, and adds a slower radial breathing cycle. Controls: Deform Strength, Organic Noise Scale, Breathing, Mask Threshold, and Surface Detail.
+
+For Living Entity, a mesh with enough geometry gives the best result. Surface Detail increases subdivision before deformation; start at 2, then try 3 for smoother motion. Very low-poly meshes otherwise cannot deform into soft shapes. The Color Ramp inside the Geometry Nodes graph can be edited to change which regions move.
 
 The generated Geometry Nodes group is editable. Play the timeline to preview Scene Time-driven motion.
 
@@ -31,4 +34,4 @@ Note: scatter output uses Geometry Nodes instances, not separate scene objects. 
 Leave VIN Procedural Lab installed if you still use its shape generator. The two add-ons use different panel tabs, scene settings, operators, and modifier names.
 
 ## Compatibility
-Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises the four animation graphs and the scatter graph.
+Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, plus the scatter graph.
