@@ -35,7 +35,7 @@ def main() -> None:
     target.select_set(True)
     bpy.context.view_layer.objects.active = target
 
-    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST"):
+    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST", "LIVING"):
         settings.animation_type = animation_type
         result = bpy.ops.vinmotion.build_animation()
         if "FINISHED" not in result:
@@ -45,6 +45,20 @@ def main() -> None:
             raise AssertionError(f"{animation_type} did not create a Geometry Nodes modifier")
         if len(modifier.node_group.nodes) < 4 or len(modifier.node_group.links) < 3:
             raise AssertionError(f"{animation_type} created an incomplete node graph")
+        if animation_type == "LIVING":
+            node_types = {node.bl_idname for node in modifier.node_group.nodes}
+            required_living_nodes = {
+                "GeometryNodeSubdivideMesh",
+                "GeometryNodeInputPosition",
+                "GeometryNodeInputNormal",
+                "ShaderNodeTexNoise",
+                "ShaderNodeValToRGB",
+                "GeometryNodeSetPosition",
+            }
+            if not required_living_nodes.issubset(node_types):
+                raise AssertionError(f"Living Entity graph missing nodes: {required_living_nodes - node_types}")
+            if len(modifier.node_group.links) < 22:
+                raise AssertionError("Living Entity graph does not contain enough field links")
         print(f"[OK] VIN Motion {animation_type}: {len(modifier.node_group.nodes)} nodes, {len(modifier.node_group.links)} links")
 
     # Create an independent source collection with two object choices and an unrelated Plane.
