@@ -25,6 +25,11 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert "animation_phase_spread: FloatProperty" in source
     assert "for index, obj in enumerate(targets)" in source
     assert "class VINMOTION_OT_surface_spawn" in source
+    assert "class VINMOTION_OT_surface_crawl" in source
+    assert "def _build_surface_bvh" in source
+    assert "def _projected_random_walk" in source
+    assert "def _animate_object_crawl" in source
+    assert "Animate Selected Along Surface" in source
     assert "class VINMOTION_OT_build_scatter" in source
     assert "def _surface_triangles" in source
     assert "def _insert_growth_keys" in source
