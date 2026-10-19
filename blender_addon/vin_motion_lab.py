@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 3, 1),
+    "version": (0, 3, 2),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -337,7 +337,7 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.3.1"
+    tree["vinmotion_version"] = "0.3.2"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -510,7 +510,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.3.1"
+    tree["vinmotion_version"] = "0.3.2"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -947,7 +947,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.operator("vinmotion.reset_motion", text="Reset", icon="FILE_REFRESH")
 
         box = layout.box()
-        box.label(text="2 · Noise / Color Ramp Scatter", icon="FORCE_NOISE")
+        box.label(text="2 · Noise / Color Ramp Scatter", icon="NODETREE")
         box.label(text="Select a Plane, then choose a source collection")
         box.prop(settings, "scatter_collection")
         box.prop(settings, "scatter_density")
@@ -962,7 +962,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         box.operator("vinmotion.build_scatter", text="Build Scatter Nodes (Instances)", icon="NODETREE")
 
         box = layout.box()
-        box.label(text="3 · Surface Spawn / Individual Motion", icon="PARTICLES")
+        box.label(text="3 · Surface Spawn / Individual Motion", icon="NODETREE")
         box.label(text="Creates separate objects, not shared instances")
         box.prop(settings, "spawn_source_collection")
         box.prop(settings, "spawn_count")
@@ -981,7 +981,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.prop(settings, "spawn_start_frame")
         row.prop(settings, "spawn_stagger_frames")
         box.prop(settings, "spawn_growth_frames")
-        box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="OUTLINER_OB_GROUP_INSTANCE")
+        box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="NODETREE")
         layout.separator()
         layout.label(text="Standalone add-on — no effect on VIN Procedural Lab.")
 
