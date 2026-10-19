@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 8, 0),
+    "version": (0, 8, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -524,7 +524,7 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.8.0"
+    tree["vinmotion_version"] = "0.8.1"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -717,7 +717,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.8.0"
+    tree["vinmotion_version"] = "0.8.1"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -1453,7 +1453,9 @@ def _prepare_object_motion_action(obj):
     for curve in list(action.fcurves):
         if curve.data_path in {"location", "rotation_euler", "rotation_quaternion", "scale"}:
             action.fcurves.remove(curve)
+    saved_rotation = obj.matrix_world.to_euler("XYZ")
     obj.rotation_mode = "XYZ"
+    obj.rotation_euler = saved_rotation
     return action
 
 
@@ -1490,12 +1492,11 @@ def _finish_object_motion_action(obj, interpolation="BEZIER", loop=True):
 def _object_motion_key_path(obj, start_frame, duration, mode, amount, rng, center, axis, settings, index, distance_ratio):
     """Insert distinct transform curves for one selected object. Returns path metadata."""
     base_location = obj.location.copy()
-    base_rotation = obj.rotation_euler.copy()
+    base_rotation = Vector(tuple(obj.rotation_euler))
     base_scale = obj.scale.copy()
     frame_start = int(start_frame)
     frame_duration = max(12, int(round(duration / max(0.1, settings.object_motion_speed))))
     motion_amount = float(amount)
-    axis_vector = _motion_axis_vector(axis)
     phase = rng.uniform(-math.pi, math.pi)
     channels = {"location", "rotation_euler", "scale"}
     loop = True
@@ -1552,7 +1553,7 @@ def _object_motion_key_path(obj, start_frame, duration, mode, amount, rng, cente
             loc = center.copy()
             loc[plane_axes[0]] += radius * math.cos(angle)
             loc[plane_axes[1]] += radius * math.sin(angle)
-            loc[axis_index] += height + motion_amount * 0.18 * math.sin(2.0 * angle + phase)
+            loc[axis_index] += height + motion_amount * 0.18 * math.sin(math.tau * t)
             _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, base_rotation, base_scale, channels)
 
     elif mode == "MAGNET":
