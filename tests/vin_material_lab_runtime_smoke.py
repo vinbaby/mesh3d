@@ -99,6 +99,11 @@ def main() -> None:
         "HEX_CELLS",
         "PITTED",
         "CIRCUIT_LINES",
+        "FABRIC_WEAVE",
+        "WOOD_GRAIN",
+        "SPECKLED_STONE",
+        "MICRO_SCRATCHES",
+        "WATER_DROPLETS",
     )
     for pattern in patterns:
         settings.texture_pattern = pattern
@@ -116,9 +121,9 @@ def main() -> None:
         nodes = {node.bl_idname for node in material.node_tree.nodes}
         if "ShaderNodeValToRGB" not in nodes or "ShaderNodeBump" not in nodes:
             raise AssertionError(f"{pattern} lacks Color Ramp or Bump nodes")
-        if pattern in {"CLEAN", "NOISE_RAMP", "PITTED", "CIRCUIT_LINES"} and "ShaderNodeTexNoise" not in nodes:
+        if pattern in {"CLEAN", "NOISE_RAMP", "PITTED", "CIRCUIT_LINES", "WOOD_GRAIN", "SPECKLED_STONE", "MICRO_SCRATCHES"} and "ShaderNodeTexNoise" not in nodes:
             raise AssertionError(f"{pattern} lacks Noise Texture")
-        if pattern in {"BRUSHED", "CARBON_FIBER", "CIRCUIT_LINES"} and "ShaderNodeTexWave" not in nodes:
+        if pattern in {"BRUSHED", "CARBON_FIBER", "CIRCUIT_LINES", "FABRIC_WEAVE", "WOOD_GRAIN", "MICRO_SCRATCHES"} and "ShaderNodeTexWave" not in nodes:
             raise AssertionError(f"{pattern} lacks Wave Texture")
         if pattern == "CARBON_FIBER" and not any(node.bl_idname == "ShaderNodeMath" for node in material.node_tree.nodes):
             raise AssertionError("Carbon Fiber graph lacks a weave combination node")
@@ -136,7 +141,7 @@ def main() -> None:
         raise AssertionError(f"Create standalone node material failed: {result}")
     templates = [
         material for material in bpy.data.materials
-        if material.get("vinmat_version") == "0.1.0"
+        if material.get("vinmat_version") == "0.2.0"
         and material.as_pointer() not in previous_materials
     ]
     if len(templates) != 1:
@@ -146,6 +151,52 @@ def main() -> None:
     if templates[0].get("vinmat_texture") != "BRUSHED":
         raise AssertionError("Standalone node material did not use the selected texture pattern")
     print(f"[OK] Standalone node material: {templates[0].name}")
+
+    finishes = (
+        "TITANIUM", "BLACK_CHROME", "PORCELAIN", "CARBON_COMPOSITE",
+        "ALIEN_POROUS", "ENERGY_CERAMIC", "CLEAR_GLASS", "FROSTED_GLASS",
+        "CLEAR_PLASTIC", "MATTE_PLASTIC", "RUBBER", "FABRIC", "LEATHER",
+        "WOOD", "STONE", "PAPER",
+    )
+    for finish in finishes:
+        settings.surface_finish = finish
+        settings.texture_pattern = "NOISE_RAMP"
+        for obj in bpy.context.selected_objects:
+            obj.select_set(False)
+        cube.select_set(True)
+        bpy.context.view_layer.objects.active = cube
+        result = bpy.ops.vinmat.apply_selected()
+        if "FINISHED" not in result:
+            raise AssertionError(f"Surface finish {finish} failed to build: {result}")
+        material = cube.data.materials[0]
+        shader = material.node_tree.nodes.get("VINMAT · Principled Surface")
+        if shader is None:
+            raise AssertionError(f"{finish} lacks Principled Surface")
+        if material.get("vinmat_finish") != finish:
+            raise AssertionError(f"{finish} finish metadata mismatch")
+        transmission = shader.inputs.get("Transmission Weight") or shader.inputs.get("Transmission")
+        if finish in {"CLEAR_GLASS", "FROSTED_GLASS", "CLEAR_PLASTIC"}:
+            if transmission is None or transmission.default_value <= 0.0:
+                raise AssertionError(f"{finish} should configure transmission")
+        if finish == "RUBBER" and shader.inputs["Roughness"].default_value < 0.75:
+            raise AssertionError("Rubber should be very rough")
+        if finish == "FABRIC":
+            sheen = shader.inputs.get("Sheen Weight") or shader.inputs.get("Sheen")
+            if sheen is not None and sheen.default_value < 0.2:
+                raise AssertionError("Fabric should configure visible sheen")
+        print(f"[OK] Surface finish {finish}: {len(material.node_tree.nodes)} nodes")
+
+    for palette in (
+        "CYBER_AMBER", "MONO_GOLD", "NEON_PRISM", "TITANIUM_SUNSET",
+        "PORCELAIN_CHAMPAGNE", "VOID_EMBER", "EARTH_NATURAL",
+        "SOFT_PASTEL", "OCEAN_COAST", "FOREST_MOSS", "CANDY_POP",
+        "CLAY_TERRACOTTA",
+    ):
+        settings.palette = palette
+        result = bpy.ops.vinmat.create_material()
+        if "FINISHED" not in result:
+            raise AssertionError(f"Palette {palette} could not create a material")
+    print("[OK] All 12 color palettes create editable materials.")
     print("VIN Material Lab Blender runtime smoke test passed.")
 
 
