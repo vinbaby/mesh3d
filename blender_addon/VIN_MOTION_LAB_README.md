@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.3.2
+# VIN Motion Lab — Standalone Blender Add-on v0.4.2
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -29,6 +29,17 @@ Controls: Spawn Count, Seed, Min/Max Scale, Align to Surface, Speed/Amount Varia
 
 The quick Scatter tool below remains available for lighter-weight instance-based layouts when individual object control is not needed.
 
+### Surface Crawl / Per-Object Path
+
+This creates ordinary transform keyframes on each selected object, not one shared Geometry Nodes animation. Each object gets a separately seeded random-walk route projected onto a target mesh using a BVH nearest-surface query.
+
+1. Keep the target mesh (usually a Plane) separate from the moving objects.
+2. Select the objects that should crawl, then set **Crawl Surface** to the target mesh.
+3. Choose Path Steps, Frames per Step, Step Distance, Surface Offset, First Crawl Frame and Start Stagger.
+4. Click **Animate Selected Along Surface** and play the timeline.
+
+Each object's route uses its own random seed, has its own keyframes, and loops with a Cycles modifier. Optional Align to Surface aligns local Z to the sampled surface normal. Targets must be unparented in this version; the active target surface is not animated or modified. This is a procedural projected walk rather than a physics-based crawler, so sharp edges or disconnected surface islands can result in short pauses or jumps.
+
 ### Noise / Color Ramp Scatter
 1. Keep the objects you want to scatter in a dedicated Blender Collection. Use the original generated source parts; they remain separate objects.
 2. Add or select a mesh Plane and keep that Plane outside the source collection.
@@ -47,4 +58,4 @@ Note: scatter output uses Geometry Nodes instances, not separate scene objects. 
 Leave VIN Procedural Lab installed if you still use its shape generator. The two add-ons use different panel tabs, scene settings, operators, and modifier names.
 
 ## Compatibility
-Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, the instance-based scatter graph, and Surface Spawn's separate objects, unique per-object node groups and growth keyframes.
+Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, the instance-based scatter graph, Surface Spawn's separate objects and unique per-object node groups, and Surface Crawl's independent looping paths.
