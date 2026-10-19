@@ -1321,6 +1321,12 @@ class VINMOTION_PT_animation(bpy.types.Panel):
             amount_label = "Twist Strength"
         elif settings.animation_type == "LIVING":
             amount_label = "Deform Strength"
+        elif settings.animation_type == "DRIFT":
+            amount_label = "Drift Radius"
+        elif settings.animation_type == "RADIAL":
+            amount_label = "Wave Strength"
+        elif settings.animation_type == "LATTICE_PULSE":
+            amount_label = "Lattice Pulse Strength"
         else:
             amount_label = "Amount"
         box.prop(settings, "animation_amount", text=amount_label)
