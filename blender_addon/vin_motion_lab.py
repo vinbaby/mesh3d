@@ -337,7 +337,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.2.0"
+    tree["vinmotion_version"] = "0.3.0"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -510,7 +510,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.2.0"
+    tree["vinmotion_version"] = "0.3.0"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
