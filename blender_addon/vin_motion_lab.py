@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -22,6 +22,7 @@ ANIMATION_ITEMS = [
     ("SPIN", "Continuous Spin", "Rotate the whole geometry over time"),
     ("PULSE", "Scale Pulse", "Scale the geometry rhythmically"),
     ("TWIST", "Animated Twist", "Twist points around the Z axis over time"),
+    ("LIVING", "Living Entity", "Organic breathing and noise-driven local deformation"),
 ]
 ANIMATION_LABELS = {identifier: label for identifier, label, _description in ANIMATION_ITEMS}
 
@@ -69,10 +70,12 @@ def _build_animation_group(settings, animation_type):
         default=settings.animation_speed, min_value=0.0, max_value=20.0,
     )
     amount_label = "Amount"
-    amount_limit = 0.95 if animation_type == "PULSE" else 10.0
+    amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type == "LIVING" else 10.0)
     amount_default = min(settings.animation_amount, amount_limit)
     if animation_type == "TWIST":
         amount_label = "Twist Strength"
+    elif animation_type == "LIVING":
+        amount_label = "Deform Strength"
     elif animation_type == "PULSE":
         amount_label = "Pulse Amount"
     elif animation_type == "BOB":
@@ -81,6 +84,24 @@ def _build_animation_group(settings, animation_type):
         tree, amount_label, "INPUT", "NodeSocketFloat",
         default=amount_default, min_value=0.0, max_value=amount_limit,
     )
+    extra_sockets = {}
+    if animation_type == "LIVING":
+        extra_sockets["noise_scale"] = _add_interface_socket(
+            tree, "Organic Noise Scale", "INPUT", "NodeSocketFloat",
+            default=settings.entity_noise_scale, min_value=0.05, max_value=20.0,
+        )
+        extra_sockets["breathing"] = _add_interface_socket(
+            tree, "Breathing", "INPUT", "NodeSocketFloat",
+            default=settings.entity_breathing, min_value=0.0, max_value=0.8,
+        )
+        extra_sockets["threshold"] = _add_interface_socket(
+            tree, "Mask Threshold", "INPUT", "NodeSocketFloat",
+            default=settings.entity_mask_threshold, min_value=0.0, max_value=1.0,
+        )
+        extra_sockets["subdivision"] = _add_interface_socket(
+            tree, "Surface Detail", "INPUT", "NodeSocketInt",
+            default=settings.entity_subdivision, min_value=0, max_value=4,
+        )
     geo_out = _add_interface_socket(tree, "Geometry", "OUTPUT", "NodeSocketGeometry")
     nodes, links = tree.nodes, tree.links
     nodes.clear()
@@ -195,17 +216,123 @@ def _build_animation_group(settings, animation_type):
         links.new(combine.outputs["Vector"], set_position.inputs["Position"])
         links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
 
+    elif animation_type == "LIVING":
+        # Subdivide before displacement so low-poly input meshes gain enough control points.
+        subdivide = nodes.new("GeometryNodeSubdivideMesh")
+        subdivide.location = (-650, 140)
+        subdivide.label = "Add surface resolution before deformation"
+        links.new(_find_socket(group_in.outputs, "Geometry"), subdivide.inputs["Mesh"])
+        links.new(_find_socket(group_in.outputs, "Surface Detail"), subdivide.inputs["Level"])
+
+        position = nodes.new("GeometryNodeInputPosition")
+        position.location = (-900, -80)
+        normal = nodes.new("GeometryNodeInputNormal")
+        normal.location = (-650, -430)
+
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.location = (-420, -100)
+        noise.label = "Living surface · animated 4D Noise"
+        noise.noise_dimensions = "4D"
+        links.new(position.outputs["Position"], noise.inputs["Vector"])
+        links.new(_find_socket(group_in.outputs, "Organic Noise Scale"), noise.inputs["Scale"])
+        links.new(time_mul.outputs[0], noise.inputs["W"])
+
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.location = (-170, -80)
+        ramp.label = "Organic influence mask · editable Color Ramp"
+        ramp.color_ramp.elements[0].position = 0.28
+        ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 0.0)
+        ramp.color_ramp.elements[1].position = 0.72
+        ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+
+        mask_test = _math_node(nodes, "GREATER_THAN", "Threshold selects the moving regions", (80, -60))
+        links.new(ramp.outputs["Alpha"], mask_test.inputs[0])
+        links.new(_find_socket(group_in.outputs, "Mask Threshold"), mask_test.inputs[1])
+
+        centered_noise = nodes.new("ShaderNodeVectorMath")
+        centered_noise.operation = "SUBTRACT"
+        centered_noise.location = (-160, -360)
+        centered_noise.label = "Center the 3D noise direction"
+        links.new(noise.outputs["Color"], centered_noise.inputs[0])
+        centered_noise.inputs[1].default_value = (0.5, 0.5, 0.5)
+
+        displacement_amount = _math_node(nodes, "MULTIPLY", "Deform strength × mask weight", (100, -350))
+        links.new(_find_socket(group_in.outputs, amount_label), displacement_amount.inputs[0])
+        links.new(ramp.outputs["Alpha"], displacement_amount.inputs[1])
+
+        displacement_vector = nodes.new("ShaderNodeVectorMath")
+        displacement_vector.operation = "SCALE"
+        displacement_vector.location = (330, -350)
+        displacement_vector.label = "Noise displacement"
+        links.new(centered_noise.outputs["Vector"], displacement_vector.inputs["Vector"])
+        links.new(displacement_amount.outputs[0], displacement_vector.inputs["Scale"])
+
+        # Slow radial breathing is intentionally slower than the surface-noise motion.
+        breath_rate = _math_node(nodes, "MULTIPLY", "Breath rate", (-650, -700))
+        breath_rate.inputs[1].default_value = 0.55
+        links.new(time_mul.outputs[0], breath_rate.inputs[0])
+        breath_wave = _math_node(nodes, "SINE", "Soft breathing cycle", (-420, -700))
+        links.new(breath_rate.outputs[0], breath_wave.inputs[0])
+        breath_amount = _math_node(nodes, "MULTIPLY", "Breathing amplitude", (-200, -700))
+        links.new(breath_wave.outputs[0], breath_amount.inputs[0])
+        links.new(_find_socket(group_in.outputs, "Breathing"), breath_amount.inputs[1])
+        breath_scale = _math_node(nodes, "ADD", "Scale around neutral size", (30, -700))
+        breath_scale.inputs[1].default_value = 1.0
+        links.new(breath_amount.outputs[0], breath_scale.inputs[0])
+
+        radial_breath = nodes.new("ShaderNodeVectorMath")
+        radial_breath.operation = "SCALE"
+        radial_breath.location = (100, 220)
+        radial_breath.label = "Whole-body breathing"
+        links.new(position.outputs["Position"], radial_breath.inputs["Vector"])
+        links.new(breath_scale.outputs[0], radial_breath.inputs["Scale"])
+
+        # Also push along the surface normal, so the silhouette swells rather than sliding like a rigid plate.
+        noise_center = _math_node(nodes, "SUBTRACT", "Noise around zero", (80, -520))
+        noise_center.inputs[1].default_value = 0.5
+        links.new(noise.outputs["Fac"], noise_center.inputs[0])
+        normal_strength = _math_node(nodes, "MULTIPLY", "Normal displacement", (310, -560))
+        links.new(noise_center.outputs[0], normal_strength.inputs[0])
+        links.new(displacement_amount.outputs[0], normal_strength.inputs[1])
+        normal_offset = nodes.new("ShaderNodeVectorMath")
+        normal_offset.operation = "SCALE"
+        normal_offset.location = (520, -500)
+        links.new(normal.outputs["Normal"], normal_offset.inputs["Vector"])
+        links.new(normal_strength.outputs[0], normal_offset.inputs["Scale"])
+
+        offset_sum = nodes.new("ShaderNodeVectorMath")
+        offset_sum.operation = "ADD"
+        offset_sum.location = (540, -180)
+        links.new(displacement_vector.outputs["Vector"], offset_sum.inputs[0])
+        links.new(normal_offset.outputs["Vector"], offset_sum.inputs[1])
+
+        new_position = nodes.new("ShaderNodeVectorMath")
+        new_position.operation = "ADD"
+        new_position.location = (560, 180)
+        new_position.label = "Breathing position + organic offset"
+        links.new(radial_breath.outputs["Vector"], new_position.inputs[0])
+        links.new(offset_sum.outputs["Vector"], new_position.inputs[1])
+
+        set_position = nodes.new("GeometryNodeSetPosition")
+        set_position.location = (850, 140)
+        set_position.label = "Only noise-mask-selected regions deform"
+        links.new(subdivide.outputs["Mesh"], set_position.inputs["Geometry"])
+        links.new(mask_test.outputs[0], set_position.inputs["Selection"])
+        links.new(new_position.outputs["Vector"], set_position.inputs["Position"])
+        links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
+
     else:
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.1.0"
+    tree["vinmotion_version"] = "0.2.0"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
     tree["vinmotion_geometry_input"] = getattr(geo_in, "identifier", "Geometry")
     tree["vinmotion_geometry_output"] = getattr(geo_out, "identifier", "Geometry")
-    return tree, speed_socket, amount_socket
+    return tree, speed_socket, amount_socket, extra_sockets
 
 
 
@@ -372,7 +499,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.1.0"
+    tree["vinmotion_version"] = "0.2.0"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -381,7 +508,11 @@ def _build_field_scatter_group(settings):
 class VINMOTION_Settings(bpy.types.PropertyGroup):
     animation_type: EnumProperty(name="Animation", items=ANIMATION_ITEMS, default="BOB")
     animation_speed: FloatProperty(name="Speed", default=1.0, min=0.0, max=20.0, precision=2)
-    animation_amount: FloatProperty(name="Amount", description="Height, pulse intensity, or twist strength", default=0.5, min=0.0, max=10.0, precision=2)
+    animation_amount: FloatProperty(name="Amount", description="Height, pulse intensity, twist strength, or living surface deformation", default=0.5, min=0.0, max=10.0, precision=2)
+    entity_noise_scale: FloatProperty(name="Organic Noise Scale", default=1.6, min=0.05, max=20.0, precision=2)
+    entity_breathing: FloatProperty(name="Breathing", default=0.18, min=0.0, max=0.8, precision=2)
+    entity_mask_threshold: FloatProperty(name="Mask Threshold", default=0.30, min=0.0, max=1.0, precision=2)
+    entity_subdivision: IntProperty(name="Surface Detail", default=2, min=0, max=4)
 
     scatter_collection: PointerProperty(
         name="Source Collection",
@@ -411,7 +542,7 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
             return {"CANCELLED"}
         settings = context.scene.vinmotion_settings
         try:
-            tree, speed_socket, amount_socket = _build_animation_group(settings, settings.animation_type)
+            tree, speed_socket, amount_socket, extra_sockets = _build_animation_group(settings, settings.animation_type)
             modifier = obj.modifiers.get("VIN Motion · Animation")
             if modifier is None or modifier.type != "NODES":
                 modifier = obj.modifiers.new(name="VIN Motion · Animation", type="NODES")
@@ -421,7 +552,18 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
             if speed_id:
                 modifier[speed_id] = settings.animation_speed
             if amount_id:
-                modifier[amount_id] = min(settings.animation_amount, 0.95 if settings.animation_type == "PULSE" else 10.0)
+                amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type == "LIVING" else 10.0)
+                modifier[amount_id] = min(settings.animation_amount, amount_limit)
+            extra_values = {
+                "noise_scale": settings.entity_noise_scale,
+                "breathing": settings.entity_breathing,
+                "threshold": settings.entity_mask_threshold,
+                "subdivision": settings.entity_subdivision,
+            }
+            for key, socket in extra_sockets.items():
+                identifier = getattr(socket, "identifier", None)
+                if identifier:
+                    modifier[identifier] = extra_values[key]
             obj["vinmotion_animation_type"] = settings.animation_type
             obj["vinmotion_animation_group"] = tree.name
             context.view_layer.update()
@@ -504,9 +646,17 @@ class VINMOTION_PT_main(bpy.types.Panel):
             amount_label = "Pulse Amount"
         elif settings.animation_type == "TWIST":
             amount_label = "Twist Strength"
+        elif settings.animation_type == "LIVING":
+            amount_label = "Deform Strength"
         else:
             amount_label = "Amount"
         box.prop(settings, "animation_amount", text=amount_label)
+        if settings.animation_type == "LIVING":
+            box.prop(settings, "entity_noise_scale")
+            box.prop(settings, "entity_breathing")
+            box.prop(settings, "entity_mask_threshold")
+            box.prop(settings, "entity_subdivision")
+            box.label(text="Needs mesh vertices to deform; higher Detail adds resolution.")
         box.operator("vinmotion.build_animation", text="Build Animation Nodes", icon="ACTION")
 
         box = layout.box()
