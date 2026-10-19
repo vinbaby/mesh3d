@@ -1,4 +1,4 @@
-# VIN Procedural Lab — Blender Add-on v0.8.0
+# VIN Procedural Lab — Blender Add-on v0.8.1
 
 A separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
@@ -42,3 +42,8 @@ Object motion presets and Noise/Color Ramp scatter now have a dedicated, indepen
 - Geometry and node graphs are procedural and editable in Blender; no AI image-generation API is used.
 - Blender 3.6+ is targeted, but Geometry Nodes APIs may vary between Blender versions.
 - The CI runtime test exercises all shape builders, component separation, the Noise/Color Ramp Scatter graph and the scene generator. Review visual motion/shading in your own Blender session as well.
+
+
+## Separate material and texture tool
+
+Color palettes, material finishes and shader texture nodes live in the independent VIN Material Lab add-on: see [VIN_MATERIAL_LAB_README.md](VIN_MATERIAL_LAB_README.md) and [vin_material_lab.py](vin_material_lab.py). They are intentionally not embedded in the procedural shape generator.
