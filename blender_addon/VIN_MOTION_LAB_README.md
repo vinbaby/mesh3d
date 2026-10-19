@@ -1,11 +1,11 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.3.0
+# VIN Motion Lab — Standalone Blender Add-on v0.3.1
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
 ## Features
 
 ### Object Animation
-Select any mesh or curve object, choose one mode, and click Build Animation Nodes:
+Select one or more mesh/curve objects, choose a mode, and click **Build on Selected**. Every selected object receives its own Geometry Nodes group; phase is spread across the selection so the pieces do not move in sync. Use Reset to restore obvious starter values (Speed 1.0, Living Deform Strength 0.35, Breathing 0.18, Mask Threshold 0.30).
 - Bob / Float — animated vertical offset
 - Continuous Spin — rotates geometry over time
 - Scale Pulse — rhythmic scaling
