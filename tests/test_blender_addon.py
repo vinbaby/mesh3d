@@ -36,7 +36,12 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert 'name="Phase"' in source
     assert "Spawn Separate Objects" in source
     assert "spawn.animation_type" not in source
-    assert "class VINMOTION_PT_main" in source
+    assert "class VINMOTION_PT_animation" in source
+    assert 'bl_category = "VIN Animate"' in source
+    assert 'bl_category = "VIN Scatter"' in source
+    assert 'bl_category = "VIN Spawn"' in source
+    assert 'bl_category = "VIN Crawl"' in source
+    assert "class VINMOTION_PT_main" not in source
     assert "GeometryNodeDistributePointsOnFaces" in source
     assert "ShaderNodeTexNoise" in source
     assert "ShaderNodeValToRGB" in source
