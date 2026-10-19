@@ -41,3 +41,6 @@ VIN Motion Lab uses its own **VIN Motion** sidebar tab and provides Bob/Float, S
 
 
 Alien Lattice was added to the procedural generator: a 3-layer organic shell / triangular space-frame / metal-bead sculpture. VIN Motion Lab v0.7.0 adds Lattice Pulse to deform each layer independently with a Noise/Color Ramp mask. See the add-on READMEs for use and installation.
+
+
+VIN Motion Lab v0.8.1 adds eight transform-keyframed Object Motion Actions (Wobble/Tumble, Shockwave Reaction, Orbit/Revolve, Magnet Pull/Repel, Glitch/Teleport, Fold/Unfold, Dissolve/Assemble and Wave Cascade) in the separate VIN Actions sidebar tab. Geometry Nodes motion presets remain in VIN Animate.
