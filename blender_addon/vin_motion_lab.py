@@ -1741,11 +1741,15 @@ class VINMOTION_PT_actions(bpy.types.Panel):
         box.prop(settings, "object_motion_duration")
         box.prop(settings, "object_motion_stagger")
         box.prop(settings, "object_motion_seed")
-        box.prop(settings, "object_motion_anchor")
-        box.prop(settings, "object_motion_axis")
+        if settings.object_motion_type in {"SHOCKWAVE", "ORBIT", "MAGNET"}:
+            box.prop(settings, "object_motion_anchor")
+            box.label(text="Empty anchor uses the selected objects' average center.")
+        if settings.object_motion_type in {"ORBIT", "CASCADE"}:
+            box.prop(settings, "object_motion_axis")
         if settings.object_motion_type == "MAGNET":
             box.prop(settings, "object_magnet_mode")
         if settings.object_motion_type == "SHOCKWAVE":
+            box.prop(settings, "object_motion_stagger")
             box.label(text="One-shot reaction, delayed by distance from center.")
         elif settings.object_motion_type == "FOLD":
             box.label(text="Best with separated panels/components.")
