@@ -32,3 +32,9 @@ The next stage is to make detected points and edges editable, then design how th
 The separate Blender add-on is in [`blender_addon/vin_procedural_lab.py`](blender_addon/vin_procedural_lab.py), with install/use instructions in [`blender_addon/README.md`](blender_addon/README.md).
 
 It provides a procedural 3D shape generator and an Animation Builder that creates editable Geometry Nodes groups. It does not use an AI API and does not replace the existing desktop app.
+
+## Separate add-on: VIN Motion Lab
+
+Animation is being kept in its own add-on so it does not interfere with the procedural shape generator. Download [`blender_addon/vin_motion_lab.py`](blender_addon/vin_motion_lab.py) and follow [`blender_addon/VIN_MOTION_LAB_README.md`](blender_addon/VIN_MOTION_LAB_README.md).
+
+VIN Motion Lab uses its own **VIN Motion** sidebar tab and provides Bob/Float, Spin, Pulse, Twist, plus a Noise/Color Ramp Geometry Nodes scatter tool for a Plane. It can be installed alongside VIN Procedural Lab.
