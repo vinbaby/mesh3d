@@ -1,0 +1,478 @@
+bl_info = {
+    "name": "VIN Lighting Lab",
+    "author": "VIN / OpenAI",
+    "version": (0, 1, 0),
+    "blender": (3, 6, 0),
+    "location": "View3D > Sidebar > VIN Lighting",
+    "description": "Standalone lighting-rig builder with studio, glass, nature and sci-fi presets",
+    "category": "Lighting",
+}
+
+import bpy
+from bpy.props import (
+    BoolProperty,
+    EnumProperty,
+    FloatProperty,
+    FloatVectorProperty,
+    PointerProperty,
+)
+from mathutils import Vector
+
+
+RIG_COLLECTION_NAME = "VIN Lighting Rig"
+GLARE_NODE_NAME = "VIN Lighting · Fog Glow"
+
+LIGHTING_PRESETS = {
+    "STUDIO_PRODUCT": {
+        "world": (0.018, 0.024, 0.036),
+        "lights": [
+            ("Key Softbox", (-3.0, -4.0, 2.8), (1.00, 0.88, 0.74), 1500, 1.25),
+            ("Fill Softbox", (3.2, -1.8, 1.0), (0.60, 0.78, 1.00), 650, 1.7),
+            ("Rim Strip", (0.2, 3.0, 2.0), (0.70, 0.86, 1.00), 1800, 1.0),
+            ("Top Softbox", (-0.4, 0.2, 3.5), (1.00, 0.96, 0.88), 900, 1.5),
+        ],
+        "points": [],
+        "camera": (2.8, -3.6, 2.35),
+        "world_strength": 0.22,
+    },
+    "SOFTBOX": {
+        "world": (0.055, 0.058, 0.065),
+        "lights": [
+            ("Key Large Softbox", (-3.2, -4.0, 2.5), (1.00, 0.93, 0.84), 1100, 2.7),
+            ("Fill Large Softbox", (3.0, -2.5, 0.8), (0.80, 0.88, 1.00), 850, 2.4),
+            ("Back Softbox", (0.2, 3.0, 1.7), (1.00, 0.84, 0.66), 1200, 2.1),
+        ],
+        "points": [],
+        "camera": (2.6, -3.7, 2.15),
+        "world_strength": 0.42,
+    },
+    "GLASS": {
+        "world": (0.006, 0.013, 0.023),
+        "lights": [
+            ("Key Strip", (-3.0, -2.4, 2.4), (0.72, 0.88, 1.00), 1800, 0.45),
+            ("Side Strip Cyan", (3.2, 0.0, 1.0), (0.10, 0.72, 1.00), 1500, 0.35),
+            ("Rear Strip", (0.0, 3.0, 1.8), (0.96, 0.98, 1.00), 2200, 0.40),
+            ("Warm Edge", (-2.0, 1.6, 0.1), (1.00, 0.58, 0.25), 950, 0.55),
+            ("Top Strip", (0.0, -0.3, 3.5), (0.76, 0.91, 1.00), 1300, 0.45),
+        ],
+        "points": [],
+        "camera": (2.7, -3.8, 2.0),
+        "world_strength": 0.12,
+    },
+    "PORTRAIT": {
+        "world": (0.035, 0.028, 0.030),
+        "lights": [
+            ("Key Beauty", (-2.8, -3.6, 2.3), (1.00, 0.80, 0.67), 1200, 1.8),
+            ("Fill Beauty", (2.4, -2.0, 1.0), (0.72, 0.82, 1.00), 420, 2.4),
+            ("Hair Rim", (0.4, 2.7, 2.5), (1.00, 0.58, 0.34), 1050, 1.1),
+        ],
+        "points": [],
+        "camera": (2.6, -4.2, 1.7),
+        "world_strength": 0.30,
+    },
+    "NATURE": {
+        "world": (0.018, 0.045, 0.042),
+        "lights": [
+            ("Sunlit Key", (-3.4, -3.0, 3.5), (1.00, 0.79, 0.48), 1600, 2.2),
+            ("Sky Fill", (3.0, -1.3, 1.3), (0.36, 0.80, 0.64), 800, 2.8),
+            ("Leaf Rim", (0.0, 3.0, 2.1), (0.68, 1.00, 0.72), 1450, 1.6),
+        ],
+        "points": [],
+        "camera": (2.8, -3.8, 2.3),
+        "world_strength": 0.28,
+    },
+    "SCI_FI_REACTOR": {
+        "world": (0.002, 0.004, 0.012),
+        "lights": [
+            ("Key Cold White", (-2.8, -3.0, 2.4), (0.68, 0.84, 1.00), 1200, 1.0),
+            ("Cyan Fill", (3.0, -1.6, 0.7), (0.00, 0.55, 1.00), 900, 0.8),
+            ("Red Rim", (0.0, 3.0, 2.0), (1.00, 0.025, 0.012), 1700, 0.7),
+            ("Amber Top", (-0.5, 0.0, 3.2), (1.00, 0.32, 0.045), 1000, 0.65),
+        ],
+        "points": [
+            ("Core Point Red", (-0.25, -0.10, 0.15), (1.00, 0.008, 0.003), 170),
+            ("Core Point Amber", (0.30, 0.18, -0.15), (1.00, 0.20, 0.012), 115),
+        ],
+        "camera": (2.8, -3.6, 2.35),
+        "world_strength": 0.045,
+    },
+}
+
+
+def _light_collection(scene):
+    collection = bpy.data.collections.get(RIG_COLLECTION_NAME)
+    if collection is None:
+        collection = bpy.data.collections.new(RIG_COLLECTION_NAME)
+        scene.collection.children.link(collection)
+    elif collection.name not in scene.collection.children:
+        # A matching collection may already exist under another collection.
+        if collection.name not in [child.name for child in scene.collection.children]:
+            scene.collection.children.link(collection)
+    return collection
+
+
+def _clear_rig(scene):
+    collection = bpy.data.collections.get(RIG_COLLECTION_NAME)
+    if collection is None:
+        return
+    for obj in list(collection.objects):
+        if obj.type == "CAMERA" and scene.camera == obj:
+            previous_name = scene.get("vinlighting_previous_camera", "")
+            previous = bpy.data.objects.get(previous_name) if previous_name else None
+            scene.camera = previous if previous and previous != obj else None
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+
+def _selected_subjects(context):
+    supported = {"MESH", "CURVE", "FONT", "SURFACE", "META"}
+    selected = [obj for obj in context.selected_objects if obj.type in supported]
+    if selected:
+        return selected
+    rig = bpy.data.collections.get(RIG_COLLECTION_NAME)
+    rig_objects = set(rig.objects) if rig is not None else set()
+    return [
+        obj for obj in context.scene.objects
+        if obj.type in supported and obj.visible_get() and obj not in rig_objects
+    ]
+
+
+def _subject_bounds(objects):
+    points = []
+    for obj in objects:
+        if obj.type == "META":
+            continue
+        try:
+            points.extend(obj.matrix_world @ Vector(corner) for corner in obj.bound_box)
+        except Exception:
+            points.append(obj.matrix_world.translation.copy())
+    if not points:
+        return Vector((0.0, 0.0, 0.0)), 1.0
+    minimum = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
+    maximum = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
+    center = (minimum + maximum) * 0.5
+    radius = max((point - center).length for point in points)
+    return center, max(radius, 0.5)
+
+
+def _track_to(obj, target):
+    direction = Vector(target) - obj.location
+    if direction.length < 1e-6:
+        direction = Vector((0.0, 0.0, -1.0))
+    obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+
+def _create_area(collection, name, center, radius, offset, color, power, size, settings):
+    data = bpy.data.lights.new(name=f"VIN Lighting · {name}", type="AREA")
+    data.shape = "DISK"
+    data.energy = float(power) * settings.power_scale * max(0.35, min(radius * radius, 30.0))
+    data.color = color
+    data.size = max(0.15, radius * size * settings.light_size_scale)
+    obj = bpy.data.objects.new(f"VIN Lighting · {name}", data)
+    collection.objects.link(obj)
+    obj.location = center + Vector(offset) * radius
+    _track_to(obj, center)
+    obj["vinlighting_generated"] = True
+    return obj
+
+
+def _create_point(collection, name, center, radius, offset, color, power, settings):
+    data = bpy.data.lights.new(name=f"VIN Lighting · {name}", type="POINT")
+    data.energy = float(power) * settings.power_scale * max(0.35, min(radius * radius, 30.0))
+    data.color = color
+    data.shadow_soft_size = max(0.04, radius * 0.055 * settings.light_size_scale)
+    obj = bpy.data.objects.new(f"VIN Lighting · {name}", data)
+    collection.objects.link(obj)
+    obj.location = center + Vector(offset) * radius
+    obj["vinlighting_generated"] = True
+    return obj
+
+
+def _set_world(scene, settings, preset):
+    world = scene.world
+    if world is None:
+        world = bpy.data.worlds.new("VIN Lighting · World")
+        scene.world = world
+    if world.use_nodes:
+        background = world.node_tree.nodes.get("Background")
+    else:
+        world.use_nodes = True
+        background = world.node_tree.nodes.get("Background")
+    if background is None:
+        background = world.node_tree.nodes.new("ShaderNodeBackground")
+        output = world.node_tree.nodes.get("World Output")
+        if output is None:
+            output = world.node_tree.nodes.new("ShaderNodeOutputWorld")
+        if not output.inputs["Surface"].is_linked:
+            world.node_tree.links.new(background.outputs["Background"], output.inputs["Surface"])
+    if "vinlighting_original_color" not in world:
+        world["vinlighting_original_color"] = list(background.inputs["Color"].default_value[:3])
+        world["vinlighting_original_strength"] = float(background.inputs["Strength"].default_value)
+    background.inputs["Color"].default_value = (*settings.background_color, 1.0)
+    background.inputs["Strength"].default_value = settings.world_strength
+    world["vinlighting_preset"] = preset
+
+
+def _remove_owned_glare(scene):
+    if not scene.use_nodes or scene.node_tree is None:
+        return
+    tree = scene.node_tree
+    glare = tree.nodes.get(GLARE_NODE_NAME)
+    if glare is None:
+        return
+    incoming = list(glare.inputs["Image"].links) if glare.inputs.get("Image") else []
+    outgoing = list(glare.outputs["Image"].links) if glare.outputs.get("Image") else []
+    for link in outgoing:
+        tree.links.remove(link)
+    for link in incoming:
+        for destination in outgoing:
+            try:
+                tree.links.new(link.from_socket, destination.to_socket)
+            except RuntimeError:
+                pass
+    tree.nodes.remove(glare)
+
+
+def _configure_glow(scene, settings):
+    scene.use_nodes = True
+    tree = scene.node_tree
+    _remove_owned_glare(scene)
+    nodes, links = tree.nodes, tree.links
+    composite = next((node for node in nodes if node.bl_idname == "CompositorNodeComposite"), None)
+    if composite is None:
+        composite = nodes.new("CompositorNodeComposite")
+        composite.location = (500, 100)
+    incoming = list(composite.inputs["Image"].links)
+    source = incoming[0].from_socket if incoming else None
+    if incoming:
+        for link in incoming:
+            links.remove(link)
+    if source is None:
+        render_layers = next((node for node in nodes if node.bl_idname == "CompositorNodeRLayers"), None)
+        if render_layers is None:
+            render_layers = nodes.new("CompositorNodeRLayers")
+            render_layers.location = (-500, 100)
+        source = render_layers.outputs.get("Image")
+    glare = nodes.new("CompositorNodeGlare")
+    glare.name = GLARE_NODE_NAME
+    glare.label = GLARE_NODE_NAME
+    glare.glare_type = "FOG_GLOW"
+    glare.quality = "HIGH"
+    try:
+        glare.threshold = settings.glow_threshold
+    except Exception:
+        threshold = glare.inputs.get("Threshold")
+        if threshold is not None:
+            threshold.default_value = settings.glow_threshold
+    glare.location = (220, 100)
+    links.new(source, glare.inputs["Image"])
+    links.new(glare.outputs["Image"], composite.inputs["Image"])
+
+
+def _remove_glow(scene):
+    if scene.node_tree is None:
+        return
+    tree = scene.node_tree
+    glare = tree.nodes.get(GLARE_NODE_NAME)
+    if glare is None:
+        return
+    incoming = list(glare.inputs["Image"].links) if glare.inputs.get("Image") else []
+    outgoing = list(glare.outputs["Image"].links) if glare.outputs.get("Image") else []
+    for link in outgoing:
+        tree.links.remove(link)
+    for link in incoming:
+        for destination in outgoing:
+            try:
+                tree.links.new(link.from_socket, destination.to_socket)
+            except RuntimeError:
+                pass
+    tree.nodes.remove(glare)
+
+
+class VINLIGHT_Settings(bpy.types.PropertyGroup):
+    preset: EnumProperty(
+        name="Lighting Preset",
+        items=[
+            ("STUDIO_PRODUCT", "Studio Product", "Clean product lighting for metallic and hard-surface objects"),
+            ("SOFTBOX", "Softbox / Soft Light", "Large soft sources and gentle shadows"),
+            ("GLASS", "Glass / Crystal", "Narrow strips and edge lights to reveal transparent surfaces"),
+            ("PORTRAIT", "Portrait / Character", "Beauty key, gentle fill and warm hair rim"),
+            ("NATURE", "Nature / Organic", "Warm key, green fill and soft environmental light"),
+            ("SCI_FI_REACTOR", "Sci-Fi Reactor", "Cyan, red and amber lights for glowing reactors"),
+        ],
+        default="STUDIO_PRODUCT",
+    )
+    power_scale: FloatProperty(name="Light Power", default=1.0, min=0.05, max=4.0, precision=2)
+    light_size_scale: FloatProperty(name="Light Size", default=1.0, min=0.1, max=4.0, precision=2)
+    world_strength: FloatProperty(name="World Strength", default=0.22, min=0.0, max=3.0, precision=3)
+    background_color: FloatVectorProperty(
+        name="Background Tint",
+        subtype="COLOR",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.018, 0.024, 0.036),
+    )
+    create_camera: BoolProperty(name="Create / Aim Camera", default=True)
+    enable_glow: BoolProperty(name="Enable Fog Glow", default=True)
+    glow_threshold: FloatProperty(name="Glow Threshold", default=1.2, min=0.0, max=10.0, precision=2)
+    camera_lens: FloatProperty(name="Camera Lens", default=55.0, min=18.0, max=150.0, precision=1)
+
+
+class VINLIGHT_OT_build_rig(bpy.types.Operator):
+    bl_idname = "vinlight.build_rig"
+    bl_label = "Build Lighting Rig"
+    bl_description = "Create a dedicated collection of lights, optional camera and optional compositor glow for the selected subject"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinlight_settings
+        preset = LIGHTING_PRESETS[settings.preset]
+        subjects = _selected_subjects(context)
+        if not subjects:
+            self.report({"ERROR"}, "Select a subject object before building the lighting rig")
+            return {"CANCELLED"}
+        center, radius = _subject_bounds(subjects)
+        scene = context.scene
+        if "vinlighting_previous_camera" not in scene and scene.camera is not None:
+            scene["vinlighting_previous_camera"] = scene.camera.name
+        collection = _light_collection(scene)
+        _clear_rig(scene)
+        # Collection may remain after its objects were cleared.
+        collection = _light_collection(scene)
+
+        created = 0
+        for name, offset, color, power, size in preset["lights"]:
+            _create_area(collection, name, center, radius, offset, color, power, size, settings)
+            created += 1
+        for name, offset, color, power in preset["points"]:
+            _create_point(collection, name, center, radius, offset, color, power, settings)
+            created += 1
+
+        if settings.create_camera:
+            camera_data = bpy.data.cameras.new("VIN Lighting · Camera")
+            camera = bpy.data.objects.new("VIN Lighting · Camera", camera_data)
+            collection.objects.link(camera)
+            view_offset = Vector(preset["camera"]) * radius
+            camera.location = center + view_offset
+            camera_data.lens = settings.camera_lens
+            _track_to(camera, center)
+            scene.camera = camera
+            camera["vinlighting_generated"] = True
+
+        _set_world(scene, settings, settings.preset)
+        if settings.enable_glow:
+            _configure_glow(scene, settings)
+        else:
+            _remove_glow(scene)
+
+        scene["vinlighting_preset"] = settings.preset
+        scene["vinlighting_light_count"] = created
+        self.report({"INFO"}, f"Built {settings.preset.replace('_', ' ').title()} rig with {created} lights")
+        return {"FINISHED"}
+
+
+class VINLIGHT_OT_restore_scene(bpy.types.Operator):
+    bl_idname = "vinlight.restore_scene"
+    bl_label = "Restore Previous World / Camera"
+    bl_description = "Restore the world values and camera recorded before the first VIN Lighting setup"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        scene = context.scene
+        world = scene.world
+        if world is not None and "vinlighting_original_color" in world and world.use_nodes:
+            background = world.node_tree.nodes.get("Background")
+            if background is not None:
+                color = world.get("vinlighting_original_color", (0.05, 0.05, 0.05))
+                strength = world.get("vinlighting_original_strength", 1.0)
+                background.inputs["Color"].default_value = (*color, 1.0)
+                background.inputs["Strength"].default_value = strength
+                del world["vinlighting_original_color"]
+                del world["vinlighting_original_strength"]
+                if "vinlighting_preset" in world:
+                    del world["vinlighting_preset"]
+        previous_name = scene.get("vinlighting_previous_camera", "")
+        if previous_name:
+            previous = bpy.data.objects.get(previous_name)
+            if previous is not None:
+                scene.camera = previous
+            del scene["vinlighting_previous_camera"]
+        self.report({"INFO"}, "Restored original world values and previous camera when available")
+        return {"FINISHED"}
+
+
+class VINLIGHT_OT_remove_rig(bpy.types.Operator):
+    bl_idname = "vinlight.remove_rig"
+    bl_label = "Remove Lighting Rig"
+    bl_description = "Remove only the objects inside VIN Lighting Rig and disconnect the owned glow node"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        _clear_rig(context.scene)
+        _remove_glow(context.scene)
+        self.report({"INFO"}, "Removed VIN Lighting Rig objects and the owned Fog Glow node")
+        return {"FINISHED"}
+
+
+class VINLIGHT_PT_main(bpy.types.Panel):
+    bl_label = "VIN Lighting Lab"
+    bl_idname = "VINLIGHT_PT_main"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Lighting"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinlight_settings
+        box = layout.box()
+        box.label(text="1 · Lighting Rig Preset", icon="LIGHT")
+        box.prop(settings, "preset")
+        box.prop(settings, "power_scale")
+        box.prop(settings, "light_size_scale")
+        box.prop(settings, "create_camera")
+        box = layout.box()
+        box.label(text="2 · Environment", icon="WORLD")
+        box.prop(settings, "background_color")
+        box.prop(settings, "world_strength")
+        box = layout.box()
+        box.label(text="3 · Glow / Compositor", icon="NODE_COMPOSITING")
+        box.prop(settings, "enable_glow")
+        if settings.enable_glow:
+            box.prop(settings, "glow_threshold")
+        box.prop(settings, "camera_lens")
+        layout.operator("vinlight.build_rig", text="Build Lighting Rig", icon="OUTLINER_COLLECTION")
+        row = layout.row(align=True)
+        row.operator("vinlight.remove_rig", text="Remove Rig", icon="TRASH")
+        row.operator("vinlight.restore_scene", text="Restore World", icon="FILE_REFRESH")
+        layout.separator()
+        layout.label(text="Lights live in: VIN Lighting Rig")
+        layout.label(text="Use Rendered view or F12 to see final lighting.")
+
+
+CLASSES = (
+    VINLIGHT_Settings,
+    VINLIGHT_OT_build_rig,
+    VINLIGHT_OT_restore_scene,
+    VINLIGHT_OT_remove_rig,
+    VINLIGHT_PT_main,
+)
+
+
+def register():
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
+    bpy.types.Scene.vinlight_settings = PointerProperty(type=VINLIGHT_Settings)
+
+
+def unregister():
+    if hasattr(bpy.types.Scene, "vinlight_settings"):
+        del bpy.types.Scene.vinlight_settings
+    for cls in reversed(CLASSES):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
+
+
+if __name__ == "__main__":
+    register()
