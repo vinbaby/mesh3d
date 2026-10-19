@@ -41,6 +41,7 @@ def main() -> None:
         "ORBITAL_PARTICLE",
         "CELLULAR_VOID",
         "SPIKE_BLOOM",
+        "ALIEN_LATTICE",
     )
     for shape_type in shape_types:
         settings.shape_type = shape_type
@@ -59,6 +60,23 @@ def main() -> None:
         ]
         if settings.separate_parts and shape_type in ("HEX_ARMOR", "CIRCUIT_CORE", "ORBITAL_PARTICLE", "CELLULAR_VOID", "SPIKE_BLOOM") and len(selected_parts) < 2:
             raise AssertionError(f"{shape_type} was not split into independently selectable components")
+        if shape_type == "ALIEN_LATTICE":
+            lattice_parts = [
+                part for part in bpy.data.objects
+                if part.get("vinlab_shape_type") == "ALIEN_LATTICE"
+                and part.get("vinlab_seed") == settings.seed
+            ]
+            expected_layers = {"Shell", "Triangular Frame", "Metal Beads"}
+            actual_layers = {part.get("vinlab_lattice_layer") for part in lattice_parts}
+            if len(lattice_parts) != 3 or actual_layers != expected_layers:
+                raise AssertionError(f"Alien Lattice should create 3 editable layers, got {actual_layers}")
+            if len(selected_parts) != 3:
+                raise AssertionError(f"Alien Lattice should select its 3 editable layers, got {len(selected_parts)}")
+            if any(not part.data.materials for part in lattice_parts):
+                raise AssertionError("Alien Lattice layers should have procedural materials")
+            if not any(mod.type == "SOLIDIFY" for part in lattice_parts if part.get("vinlab_lattice_layer") == "Shell" for mod in part.modifiers):
+                raise AssertionError("Alien Lattice ceramic shell is missing its thickness modifier")
+            print(f"[OK] Alien Lattice: 3 editable layers, {sum(len(part.data.vertices) for part in lattice_parts):,} vertices")
         print(f"[OK] {shape_type}: {len(obj.data.vertices)} vertices, {len(obj.data.polygons)} polygons, {len(selected_parts) or 1} selected part(s)")
 
     target = generated[0]
