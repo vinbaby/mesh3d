@@ -9,6 +9,26 @@ def _addon_source() -> str:
     return source
 
 
+def _motion_addon_source() -> str:
+    source_path = Path(__file__).parents[1] / "blender_addon" / "vin_motion_lab.py"
+    source = source_path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(source_path))
+    return source
+
+
+def test_standalone_motion_addon_is_valid_and_independent() -> None:
+    source = _motion_addon_source()
+    assert '"name": "VIN Motion Lab"' in source
+    assert 'bl_category = "VIN Motion"' in source
+    assert "class VINMOTION_OT_build_animation" in source
+    assert "class VINMOTION_OT_build_scatter" in source
+    assert "class VINMOTION_PT_main" in source
+    assert "GeometryNodeDistributePointsOnFaces" in source
+    assert "ShaderNodeTexNoise" in source
+    assert "ShaderNodeValToRGB" in source
+    assert "class VINLAB_PT_main" not in source
+
+
 def test_blender_addon_is_valid_python() -> None:
     source = _addon_source()
     assert "bl_info" in source
