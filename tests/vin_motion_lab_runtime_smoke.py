@@ -35,7 +35,7 @@ def main() -> None:
     target.select_set(True)
     bpy.context.view_layer.objects.active = target
 
-    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL"):
+    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL", "LATTICE_PULSE"):
         settings.animation_type = animation_type
         result = bpy.ops.vinmotion.build_animation()
         if "FINISHED" not in result:
@@ -52,6 +52,22 @@ def main() -> None:
             sine_nodes = [node for node in modifier.node_group.nodes if node.bl_idname == "ShaderNodeMath" and node.operation == "SINE"]
             if len(sine_nodes) < 3:
                 raise AssertionError("3D Drift needs independent X/Y/Z sinusoidal paths")
+        if animation_type == "LATTICE_PULSE":
+            node_types = {node.bl_idname for node in modifier.node_group.nodes}
+            required_lattice_nodes = {
+                "GeometryNodeInputPosition",
+                "GeometryNodeInputNormal",
+                "ShaderNodeTexNoise",
+                "ShaderNodeValToRGB",
+                "GeometryNodeSetPosition",
+            }
+            if not required_lattice_nodes.issubset(node_types):
+                raise AssertionError(f"Lattice Pulse graph missing nodes: {required_lattice_nodes - node_types}")
+            sine_nodes = [node for node in modifier.node_group.nodes if node.bl_idname == "ShaderNodeMath" and node.operation == "SINE"]
+            if len(sine_nodes) != 1:
+                raise AssertionError("Lattice Pulse should create one travelling-wave sine")
+            if len(modifier.node_group.links) < 14:
+                raise AssertionError("Lattice Pulse graph does not contain enough links")
         if animation_type == "RADIAL":
             node_types = {node.bl_idname for node in modifier.node_group.nodes}
             required_radial_nodes = {
