@@ -63,6 +63,36 @@ def test_standalone_material_lab_has_independent_color_and_texture_nodes() -> No
     assert "color_style: EnumProperty" not in _addon_source()
 
 
+def _lighting_addon_source() -> str:
+    source_path = Path(__file__).parents[1] / "blender_addon" / "vin_lighting_lab.py"
+    source = source_path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(source_path))
+    return source
+
+
+def test_standalone_lighting_lab_has_presets_and_non_destructive_rig() -> None:
+    source = _lighting_addon_source()
+    assert '"name": "VIN Lighting Lab"' in source
+    assert '"version": (0, 1, 0)' in source
+    assert 'bl_category = "VIN Lighting"' in source
+    assert "class VINLIGHT_OT_build_rig" in source
+    assert "class VINLIGHT_OT_remove_rig" in source
+    assert "class VINLIGHT_OT_restore_scene" in source
+    assert "class VINLIGHT_PT_main" in source
+    for preset in (
+        "STUDIO_PRODUCT", "SOFTBOX", "GLASS", "PORTRAIT", "NATURE", "SCI_FI_REACTOR",
+    ):
+        assert preset in source
+    for light_kind in ('type="AREA"', 'type="POINT"'):
+        assert light_kind in source
+    assert "CompositorNodeGlare" in source
+    assert 'glare.glare_type = "FOG_GLOW"' in source
+    assert '"vinlighting_generated"' in source
+    assert 'if not obj.get("vinlighting_generated", False):' in source
+    assert "VIN Material Lab" not in _material_addon_source()
+    assert "VIN Lighting Lab" not in _material_addon_source()
+
+
 def test_standalone_motion_addon_is_valid_and_independent() -> None:
     source = _motion_addon_source()
     assert '"name": "VIN Motion Lab"' in source
