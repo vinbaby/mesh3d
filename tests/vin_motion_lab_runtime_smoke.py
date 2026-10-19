@@ -144,6 +144,56 @@ def main() -> None:
         raise AssertionError("Reset Motion Defaults did not reset Living Entity mask threshold")
     print("[OK] Reset Motion Defaults: visible Living Entity starter settings")
 
+    # Real transform-keyframed Object Motion Actions, each with an independent Action.
+    action_targets = []
+    for index, location in enumerate(((-2.0, 0.0, 0.4), (1.5, 1.0, 0.7), (0.5, -2.0, 1.0))):
+        action_obj = bpy.data.objects.new(f"VIN Object Action Target {index}", target.data.copy())
+        action_obj.location = location
+        bpy.context.scene.collection.objects.link(action_obj)
+        action_targets.append(action_obj)
+
+    settings.object_motion_speed = 1.0
+    settings.object_motion_amount = 0.55
+    settings.object_motion_duration = 48
+    settings.object_motion_stagger = 9
+    settings.object_motion_seed = 812
+    settings.object_motion_anchor = None
+    settings.object_motion_axis = "Z"
+    for mode in ("WOBBLE", "SHOCKWAVE", "ORBIT", "MAGNET", "GLITCH", "FOLD", "DISSOLVE", "CASCADE"):
+        settings.object_motion_type = mode
+        settings.object_magnet_mode = "PULL"
+        for obj in bpy.context.selected_objects:
+            obj.select_set(False)
+        for obj in action_targets:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = action_targets[0]
+        action_result = bpy.ops.vinmotion.apply_object_motion()
+        if "FINISHED" not in action_result:
+            raise AssertionError(f"Object Motion Action failed for {mode}: {action_result}")
+        action_ids = set()
+        for obj in action_targets:
+            action = obj.animation_data.action if obj.animation_data else None
+            if action is None:
+                raise AssertionError(f"{mode}: {obj.name} has no transform Action")
+            action_ids.add(action.as_pointer())
+            location_curves = [fc for fc in action.fcurves if fc.data_path == "location"]
+            rotation_curves = [fc for fc in action.fcurves if fc.data_path == "rotation_euler"]
+            scale_curves = [fc for fc in action.fcurves if fc.data_path == "scale"]
+            if len(location_curves) != 3 or len(rotation_curves) != 3 or len(scale_curves) != 3:
+                raise AssertionError(f"{mode}: {obj.name} is missing independent transform channels")
+            if any(len(fc.keyframe_points) < 5 for fc in location_curves):
+                raise AssertionError(f"{mode}: {obj.name} has too few transform keys")
+            if obj.get("vinmotion_object_motion") != mode:
+                raise AssertionError(f"{mode}: metadata was not written on {obj.name}")
+        if len(action_ids) != len(action_targets):
+            raise AssertionError(f"{mode}: object targets share an Action instead of using independent Actions")
+        if mode == "MAGNET":
+            settings.object_magnet_mode = "REPEL"
+            result = bpy.ops.vinmotion.apply_object_motion()
+            if "FINISHED" not in result:
+                raise AssertionError("Magnet Repel action failed")
+        print(f"[OK] Object Motion Action {mode}: {len(action_targets)} independent Actions")
+
     # Create an independent source collection with two object choices and an unrelated Plane.
     source_collection = bpy.data.collections.new("VIN Motion Test Sources")
     bpy.context.scene.collection.children.link(source_collection)
