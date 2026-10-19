@@ -1,4 +1,4 @@
-# VIN Procedural Lab — Blender Add-on v0.7.0
+# VIN Procedural Lab — Blender Add-on v0.7.1
 
 A separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
