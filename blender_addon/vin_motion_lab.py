@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 4, 2),
+    "version": (0, 5, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -1091,19 +1091,18 @@ class VINMOTION_OT_build_scatter(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class VINMOTION_PT_main(bpy.types.Panel):
-    bl_label = "VIN Motion Lab"
-    bl_idname = "VINMOTION_PT_main"
+class VINMOTION_PT_animation(bpy.types.Panel):
+    bl_label = "Object Animation"
+    bl_idname = "VINMOTION_PT_animation"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "VIN Motion"
+    bl_category = "VIN Animate"
 
     def draw(self, context):
         layout = self.layout
         settings = context.scene.vinmotion_settings
-
         box = layout.box()
-        box.label(text="1 · Object Animation", icon="NODETREE")
+        box.label(text="Object Animation", icon="NODETREE")
         box.prop(settings, "animation_type")
         box.prop(settings, "animation_speed")
         box.prop(settings, "animation_phase")
@@ -1124,15 +1123,26 @@ class VINMOTION_PT_main(bpy.types.Panel):
             box.prop(settings, "entity_breathing")
             box.prop(settings, "entity_mask_threshold")
             box.prop(settings, "entity_subdivision")
-            box.label(text="Needs mesh vertices to deform; higher Detail adds resolution.")
-        box.label(text="Applies to all selected objects; each gets its own graph.")
+            box.label(text="Needs mesh vertices; higher Detail adds resolution.")
+        box.label(text="Applies to selected objects; each gets its own graph.")
         row = box.row(align=True)
         row.operator("vinmotion.build_animation", text="Build on Selected", icon="ACTION")
         row.operator("vinmotion.reset_motion", text="Reset", icon="FILE_REFRESH")
 
+
+class VINMOTION_PT_scatter(bpy.types.Panel):
+    bl_label = "Noise / Color Ramp Scatter"
+    bl_idname = "VINMOTION_PT_scatter"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Scatter"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinmotion_settings
         box = layout.box()
-        box.label(text="2 · Noise / Color Ramp Scatter", icon="NODETREE")
-        box.label(text="Select a Plane, then choose a source collection")
+        box.label(text="Instance Scatter", icon="NODETREE")
+        box.label(text="Select the Plane; source collection must not contain it.")
         box.prop(settings, "scatter_collection")
         box.prop(settings, "scatter_density")
         box.prop(settings, "scatter_noise_scale")
@@ -1143,11 +1153,22 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.prop(settings, "scatter_min_scale")
         row.prop(settings, "scatter_max_scale")
         box.prop(settings, "scatter_seed")
-        box.operator("vinmotion.build_scatter", text="Build Scatter Nodes (Instances)", icon="NODETREE")
+        box.operator("vinmotion.build_scatter", text="Build Scatter Nodes", icon="NODETREE")
 
+
+class VINMOTION_PT_spawn(bpy.types.Panel):
+    bl_label = "Surface Spawn"
+    bl_idname = "VINMOTION_PT_spawn"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Spawn"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinmotion_settings
         box = layout.box()
-        box.label(text="3 · Surface Spawn / Individual Motion", icon="NODETREE")
-        box.label(text="Creates separate objects, not shared instances")
+        box.label(text="Create Separate Objects", icon="OUTLINER_OB_GROUP_INSTANCE")
+        box.label(text="Select a target mesh; use a separate source collection.")
         box.prop(settings, "spawn_source_collection")
         box.prop(settings, "spawn_count")
         box.prop(settings, "spawn_seed")
@@ -1165,11 +1186,22 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.prop(settings, "spawn_start_frame")
         row.prop(settings, "spawn_stagger_frames")
         box.prop(settings, "spawn_growth_frames")
-        box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="NODETREE")
+        box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="DUPLICATE")
 
+
+class VINMOTION_PT_crawl(bpy.types.Panel):
+    bl_label = "Surface Crawl"
+    bl_idname = "VINMOTION_PT_crawl"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Crawl"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinmotion_settings
         box = layout.box()
-        box.label(text="4 · Surface Crawl / Per-Object Path", icon="ANIM")
-        box.label(text="Select moving objects; choose a separate mesh surface")
+        box.label(text="Per-Object Surface Path", icon="ANIM")
+        box.label(text="Select objects to move; assign a separate target surface.")
         box.prop(settings, "crawl_surface")
         box.prop(settings, "crawl_seed")
         box.prop(settings, "crawl_steps")
@@ -1179,9 +1211,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         box.prop(settings, "crawl_start_frame")
         box.prop(settings, "crawl_stagger_frames")
         box.prop(settings, "crawl_align_normal")
-        box.operator("vinmotion.surface_crawl", text="Animate Selected Along Surface", icon="ACTION")
-        layout.separator()
-        layout.label(text="Standalone add-on — no effect on VIN Procedural Lab.")
+        box.operator("vinmotion.surface_crawl", text="Animate Along Surface", icon="ACTION")
 
 
 CLASSES = (
@@ -1191,7 +1221,10 @@ CLASSES = (
     VINMOTION_OT_surface_spawn,
     VINMOTION_OT_surface_crawl,
     VINMOTION_OT_build_scatter,
-    VINMOTION_PT_main,
+    VINMOTION_PT_animation,
+    VINMOTION_PT_scatter,
+    VINMOTION_PT_spawn,
+    VINMOTION_PT_crawl,
 )
 
 
