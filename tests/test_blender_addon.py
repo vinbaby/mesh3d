@@ -21,6 +21,9 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert '"name": "VIN Motion Lab"' in source
     assert 'bl_category = "VIN Motion"' in source
     assert "class VINMOTION_OT_build_animation" in source
+    assert "class VINMOTION_OT_reset_motion" in source
+    assert "animation_phase_spread: FloatProperty" in source
+    assert "for index, obj in enumerate(targets)" in source
     assert "class VINMOTION_OT_surface_spawn" in source
     assert "class VINMOTION_OT_build_scatter" in source
     assert "def _surface_triangles" in source
