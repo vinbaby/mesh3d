@@ -122,21 +122,30 @@ def main() -> None:
             raise AssertionError(f"{pattern} lacks Wave Texture")
         if pattern == "CARBON_FIBER" and not any(node.bl_idname == "ShaderNodeMath" for node in material.node_tree.nodes):
             raise AssertionError("Carbon Fiber graph lacks a weave combination node")
-        if pattern == "HEX_CELLS" and "ShaderNodeTexVoronoi" not in nodes:
-            raise AssertionError("Hex Cells graph lacks Voronoi Texture")
+        if pattern in {"HEX_CELLS", "PITTED"} and "ShaderNodeTexVoronoi" not in nodes:
+            raise AssertionError(f"{pattern} graph lacks Voronoi Texture")
         print(f"[OK] Material texture {pattern}: {len(nodes)} node types, {len(material.node_tree.links)} links")
 
     settings.palette = "MONO_GOLD"
     settings.texture_pattern = "BRUSHED"
     settings.surface_finish = "PORCELAIN"
     settings.glow_strength = 0.3
+    previous_materials = {material.as_pointer() for material in bpy.data.materials}
     result = bpy.ops.vinmat.create_material()
     if "FINISHED" not in result:
         raise AssertionError(f"Create standalone node material failed: {result}")
-    templates = [material for material in bpy.data.materials if material.get("vinmat_version") == "0.1.0"]
-    if not templates:
-        raise AssertionError("Create Node Material did not create a standalone material")
-    print(f"[OK] Standalone node material: {templates[-1].name}")
+    templates = [
+        material for material in bpy.data.materials
+        if material.get("vinmat_version") == "0.1.0"
+        and material.as_pointer() not in previous_materials
+    ]
+    if len(templates) != 1:
+        raise AssertionError(f"Create Node Material should add one new standalone material, got {len(templates)}")
+    if templates[0].get("vinmat_palette") != "MONO_GOLD":
+        raise AssertionError("Standalone node material did not use the selected palette")
+    if templates[0].get("vinmat_texture") != "BRUSHED":
+        raise AssertionError("Standalone node material did not use the selected texture pattern")
+    print(f"[OK] Standalone node material: {templates[0].name}")
     print("VIN Material Lab Blender runtime smoke test passed.")
 
 
