@@ -82,7 +82,7 @@ def test_separate_components_and_noise_scatter_are_available() -> None:
     assert "def _build_field_scatter_group" in source
     panel = source[source.index("class VINLAB_PT_main"):source.index("\n\nCLASSES =")]
     assert 'box.label(text="2 · Sci-Fi Scene Builder"' in panel
-    assert "Noise / Color Ramp tools are in the separate VIN Motion add-on." in panel
+    assert "Animation and Noise/Color Ramp tools are in the separate VIN Motion add-on." in panel
     assert 'box.label(text="2 · Noise / Color Ramp Scatter"' not in panel
     assert "ShaderNodeTexNoise" in source
     assert "ShaderNodeValToRGB" in source
