@@ -35,7 +35,7 @@ def main() -> None:
     target.select_set(True)
     bpy.context.view_layer.objects.active = target
 
-    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST", "LIVING"):
+    for animation_type in ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL"):
         settings.animation_type = animation_type
         result = bpy.ops.vinmotion.build_animation()
         if "FINISHED" not in result:
@@ -45,6 +45,25 @@ def main() -> None:
             raise AssertionError(f"{animation_type} did not create a Geometry Nodes modifier")
         if len(modifier.node_group.nodes) < 4 or len(modifier.node_group.links) < 3:
             raise AssertionError(f"{animation_type} created an incomplete node graph")
+        if animation_type == "DRIFT":
+            node_types = {node.bl_idname for node in modifier.node_group.nodes}
+            if "ShaderNodeCombineXYZ" not in node_types or "GeometryNodeSetPosition" not in node_types:
+                raise AssertionError("3D Drift graph is missing Combine XYZ or Set Position")
+            sine_nodes = [node for node in modifier.node_group.nodes if node.bl_idname == "ShaderNodeMath" and node.operation == "SINE"]
+            if len(sine_nodes) < 3:
+                raise AssertionError("3D Drift needs independent X/Y/Z sinusoidal paths")
+        if animation_type == "RADIAL":
+            node_types = {node.bl_idname for node in modifier.node_group.nodes}
+            required_radial_nodes = {
+                "GeometryNodeSubdivideMesh",
+                "GeometryNodeInputPosition",
+                "ShaderNodeVectorMath",
+                "GeometryNodeSetPosition",
+            }
+            if not required_radial_nodes.issubset(node_types):
+                raise AssertionError(f"Radial Pulse graph missing nodes: {required_radial_nodes - node_types}")
+            if len(modifier.node_group.links) < 12:
+                raise AssertionError("Radial Pulse does not have enough field links")
         if animation_type == "LIVING":
             node_types = {node.bl_idname for node in modifier.node_group.nodes}
             required_living_nodes = {
