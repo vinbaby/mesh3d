@@ -16,6 +16,43 @@ def _motion_addon_source() -> str:
     return source
 
 
+def _material_addon_source() -> str:
+    source_path = Path(__file__).parents[1] / "blender_addon" / "vin_material_lab.py"
+    source = source_path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(source_path))
+    return source
+
+
+def test_standalone_material_lab_has_independent_color_and_texture_nodes() -> None:
+    source = _material_addon_source()
+    assert '"name": "VIN Material Lab"' in source
+    assert '"version": (0, 1, 0)' in source
+    assert 'bl_category = "VIN Material"' in source
+    assert "class VINMAT_OT_apply_selected" in source
+    assert "class VINMAT_OT_create_material" in source
+    assert "class VINMAT_PT_main" in source
+    for palette in (
+        "CYBER_AMBER", "MONO_GOLD", "NEON_PRISM",
+        "TITANIUM_SUNSET", "PORCELAIN_CHAMPAGNE", "VOID_EMBER",
+    ):
+        assert palette in source
+    for pattern in (
+        "CLEAN", "BRUSHED", "NOISE_RAMP", "CARBON_FIBER",
+        "HEX_CELLS", "PITTED", "CIRCUIT_LINES",
+    ):
+        assert pattern in source
+    for node_type in (
+        "ShaderNodeBsdfPrincipled", "ShaderNodeValToRGB",
+        "ShaderNodeTexNoise", "ShaderNodeTexWave",
+        "ShaderNodeTexVoronoi", "ShaderNodeBump",
+        "ShaderNodeMapping", "ShaderNodeTexCoord",
+    ):
+        assert node_type in source
+    assert "VIN Material Lab" not in _addon_source()
+    assert "VINLAB_PT_color" not in _addon_source()
+    assert "color_style: EnumProperty" not in _addon_source()
+
+
 def test_standalone_motion_addon_is_valid_and_independent() -> None:
     source = _motion_addon_source()
     assert '"name": "VIN Motion Lab"' in source
