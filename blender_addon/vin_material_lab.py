@@ -155,6 +155,14 @@ def _make_material(settings, material_name, seed_offset=0):
         links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
         factor = noise.outputs["Fac"]
         bump_factor = factor
+        if pattern == "PITTED":
+            pits = _new_node(nodes, "ShaderNodeTexVoronoi", "VINMAT · Porous Crater Field", (x0, -120))
+            pits.feature = "F1"
+            pits.distance = "EUCLIDEAN"
+            pits.inputs["Scale"].default_value = settings.texture_scale * 1.35
+            links.new(mapping.outputs["Vector"], pits.inputs["Vector"])
+            # Keep broad color mottling while the cell field adds crater-like relief.
+            bump_factor = pits.outputs.get("Distance") or pits.outputs.get("Color")
 
     elif pattern == "BRUSHED":
         wave = _new_node(nodes, "ShaderNodeTexWave", "VINMAT · Brushed Grooves", (x0, y0))
@@ -346,7 +354,7 @@ class VINMAT_OT_apply_selected(bpy.types.Operator):
                     f"VIN Material · {obj.name} · {settings.palette.title().replace('_', ' ')}",
                     index,
                 )
-                if obj.type == "MESH" and obj.data.users > 1:
+                if obj.data.users > 1:
                     obj.data = obj.data.copy()
                 if hasattr(obj.data, "materials"):
                     obj.data.materials.clear()
