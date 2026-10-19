@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.5.0
+# VIN Motion Lab — Standalone Blender Add-on v0.6.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -11,6 +11,8 @@ Select one or more mesh/curve objects, choose a mode, and click **Build on Selec
 - Scale Pulse — rhythmic scaling
 - Animated Twist — spatially twists mesh points over time
 - **Living Entity** — subdivides the input surface, animates a 4D Noise field, maps it through an editable Color Ramp mask, displaces selected regions in noise directions and along surface normals, and adds a slower radial breathing cycle. Controls: Deform Strength, Organic Noise Scale, Breathing, Mask Threshold, and Surface Detail.
+- **3D Drift** — a looping three-axis floating path; X, Y and Z use different frequencies and phase offsets.
+- **Radial Pulse** — a travelling wave that moves vertices along radial directions; Wave Frequency controls ring spacing, and Wave Detail adds surface resolution.
 
 For Living Entity, a mesh with enough geometry gives the best result. Surface Detail increases subdivision before deformation; start at 2, then try 3 for smoother motion. Very low-poly meshes otherwise cannot deform into soft shapes. The Color Ramp inside the Geometry Nodes graph can be edited to change which regions move.
 
