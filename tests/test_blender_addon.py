@@ -60,6 +60,8 @@ def test_separate_components_and_noise_scatter_are_available() -> None:
     assert "class VINLAB_OT_separate_loose_parts" in source
     assert "class VINLAB_OT_build_field_scatter" in source
     assert "def _build_field_scatter_group" in source
+    assert 'box.label(text="2 · Noise / Color Ramp Scatter"' in source
+    assert source.index('box.label(text="2 · Noise / Color Ramp Scatter"') < source.index('box.label(text="3 · Sci-Fi Scene Builder"')
     assert "ShaderNodeTexNoise" in source
     assert "ShaderNodeValToRGB" in source
     assert "GeometryNodeDistributePointsOnFaces" in source
