@@ -21,6 +21,18 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert '"name": "VIN Motion Lab"' in source
     assert 'bl_category = "VIN Animate"' in source
     assert "class VINMOTION_OT_build_animation" in source
+    assert "class VINMOTION_OT_apply_object_motion" in source
+    assert "class VINMOTION_PT_actions" in source
+    assert 'bl_category = "VIN Actions"' in source
+    assert "OBJECT_MOTION_LABELS" in source
+    assert '("WOBBLE", "Wobble / Tumble"' in source
+    assert '("SHOCKWAVE", "Shockwave Reaction"' in source
+    assert '("ORBIT", "Orbit / Revolve"' in source
+    assert '("MAGNET", "Magnet Pull / Repel"' in source
+    assert '("GLITCH", "Glitch / Teleport"' in source
+    assert '("FOLD", "Fold / Unfold"' in source
+    assert '("DISSOLVE", "Dissolve / Assemble"' in source
+    assert '("CASCADE", "Wave Cascade"' in source
     assert '("DRIFT", "3D Drift"' in source
     assert '("RADIAL", "Radial Pulse"' in source
     assert '("LATTICE_PULSE", "Lattice Pulse"' in source
