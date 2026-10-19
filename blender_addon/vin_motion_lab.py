@@ -13,6 +13,7 @@ import math
 import random
 from mathutils import Vector, Quaternion
 from bpy.props import (
+    BoolProperty,
     EnumProperty,
     FloatProperty,
     IntProperty,
