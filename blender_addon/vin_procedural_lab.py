@@ -2177,47 +2177,14 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.operator("vinlab.separate_loose_parts", text="Separate Existing Mesh", icon="UNLINKED")
 
         box = layout.box()
-        box.label(text="2 · Noise / Color Ramp Scatter", icon="FORCE_NOISE")
-        box.label(text="Select a Plane, then choose a source collection")
-        box.prop(settings, "scatter_collection")
-        box.prop(settings, "scatter_density")
-        box.prop(settings, "scatter_noise_scale")
-        box.prop(settings, "scatter_threshold")
-        box.prop(settings, "scatter_field_strength")
-        box.prop(settings, "scatter_speed")
-        row = box.row(align=True)
-        row.prop(settings, "scatter_min_scale")
-        row.prop(settings, "scatter_max_scale")
-        box.prop(settings, "scatter_seed")
-        box.operator("vinlab.build_field_scatter", text="Scatter + Animate", icon="NODETREE")
-
-        box = layout.box()
-        box.label(text="3 · Sci-Fi Scene Builder", icon="WORLD")
+        box.label(text="2 · Sci-Fi Scene Builder", icon="WORLD")
         box.label(text="Generate a complete editable environment")
         row = box.row(align=True)
         row.operator("vinlab.generate_scifi_scene", text="Generate Scene", icon="SCENE")
         row.operator("vinlab.generate_scifi_scene", text="Random Scene", icon="FILE_REFRESH").new_variation = True
 
-        box = layout.box()
-        box.label(text="4 · Animation Builder", icon="NODETREE")
-        box.prop(settings, "animation_type")
-        box.prop(settings, "animation_speed")
-        if settings.animation_type == "BOB":
-            amount_caption = "Height"
-        elif settings.animation_type == "PULSE":
-            amount_caption = "Pulse Amount"
-        elif settings.animation_type == "TWIST":
-            amount_caption = "Twist Strength"
-        else:
-            amount_caption = None
-        if amount_caption:
-            box.prop(settings, "animation_amount", text=amount_caption)
-        box.operator("vinlab.build_animation", text="Build Geometry Nodes", icon="NODETREE")
-        box.label(text="Applies to the active object", icon="INFO")
-
         layout.separator()
-        layout.label(text="Generated node groups stay editable.")
-        layout.label(text="Scene Time drives the animation.")
+        layout.label(text="Animation and Noise/Color Ramp tools are in the separate VIN Motion add-on.")
 
 
 CLASSES = (
