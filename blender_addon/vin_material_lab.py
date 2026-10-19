@@ -164,7 +164,7 @@ def _make_material(settings, material_name, seed_offset=0):
         wave.inputs["Distortion"].default_value = 2.2
         wave.inputs["Detail"].default_value = max(1.0, float(settings.texture_detail))
         links.new(mapping.outputs["Vector"], wave.inputs["Vector"])
-        factor = wave.outputs["Color"]
+        factor = wave.outputs["Fac"]
         bump_factor = wave.outputs["Fac"]
 
     elif pattern == "CARBON_FIBER":
@@ -245,7 +245,7 @@ def _make_material(settings, material_name, seed_offset=0):
     bump = _new_node(nodes, "ShaderNodeBump", "VINMAT · Surface Relief", (420, -160))
     bump.inputs["Strength"].default_value = settings.bump_strength
     bump.inputs["Distance"].default_value = settings.bump_distance
-    links.new(bump_factor or factor, bump.inputs["Height"])
+    links.new(bump_factor if bump_factor is not None else factor, bump.inputs["Height"])
     links.new(bump.outputs["Normal"], shader.inputs["Normal"])
 
     # Use the same procedural palette as a subtle emission map. It is opt-in via Glow Strength.
