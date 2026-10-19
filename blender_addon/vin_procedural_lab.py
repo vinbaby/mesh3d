@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 7, 2),
+    "version": (0, 8, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -38,6 +38,7 @@ SHAPE_ITEMS = [
     ("ORBITAL_PARTICLE", "Orbital Particle", "A crescent cloud of metallic pearls linked by filaments"),
     ("CELLULAR_VOID", "Cellular Void", "A porous organic-metal exoskeleton with irregular holes"),
     ("SPIKE_BLOOM", "Spike Bloom", "A dark orb with randomly tapered mechanical spines"),
+    ("ALIEN_LATTICE", "Alien Lattice", "An organic loop sculpture with exposed triangular space-frame, damaged ceramic shell and clustered metal beads"),
 ]
 
 ANIMATION_ITEMS = [
@@ -64,6 +65,7 @@ SHAPE_NAMES = {
     "ORBITAL_PARTICLE": "Orbital Particle",
     "CELLULAR_VOID": "Cellular Void",
     "SPIKE_BLOOM": "Spike Bloom",
+    "ALIEN_LATTICE": "Alien Lattice",
 }
 
 
@@ -1048,6 +1050,154 @@ def _build_cellular_void(settings, rng):
     return vertices, faces, {"dark_faces": dark_faces, "face_material_indices": material_faces}
 
 
+def _build_alien_lattice_parts(settings, rng):
+    """Create a three-object organic space-frame sculpture with shell patches and bead clusters."""
+    unit = settings.size
+    detail = max(6, min(48, settings.detail))
+    t_count = max(32, min(64, detail * 2))
+    u_count = max(8, min(12, detail // 2))
+    phase = rng.uniform(0.0, math.tau)
+    gap = rng.uniform(0.62, 1.02)
+    t_start, t_end = gap * 0.5, math.tau - gap * 0.5
+    major_x = unit * rng.uniform(0.66, 0.78)
+    major_y = unit * rng.uniform(0.59, 0.72)
+    minor_r = unit * rng.uniform(0.22, 0.30)
+    minor_z = unit * rng.uniform(0.19, 0.27)
+
+    def point_at(t, u, lift=0.0):
+        organic = 1.0 + 0.065 * math.sin(3.0 * t + phase)
+        organic += 0.035 * math.sin(5.0 * t - phase * 0.7)
+        center_x = major_x * organic * math.cos(t)
+        center_y = major_y * (1.0 + 0.055 * math.cos(2.0 * t + phase)) * math.sin(t)
+        center_z = unit * (0.12 * math.sin(2.0 * t + phase) + 0.055 * math.sin(3.0 * t - phase))
+        cross = minor_r * organic * (1.0 + 0.08 * math.sin(u * 3.0 + t * 2.0 + phase))
+        x = center_x + (cross + lift) * math.cos(u) * math.cos(t)
+        y = center_y + (cross + lift) * math.cos(u) * math.sin(t)
+        z = center_z + (minor_z * organic + lift) * math.sin(u)
+        return Vector((x, y, z))
+
+    lattice_v, lattice_f, lattice_mats = [], [], []
+    def add_strut(a, b, radius, material_index=1, sides=4):
+        start_face = len(lattice_f)
+        _append_tube(lattice_v, lattice_f, (a, b), radius, sides=sides, closed=False, cap_ends=False)
+        lattice_mats.extend((face_index, material_index) for face_index in range(start_face, len(lattice_f)))
+
+    # A near-closed but deliberately irregular triangular frame; cross braces are not uniform.
+    nodes = [
+        [point_at(t_start + (t_end-t_start) * row / t_count, math.tau * col / u_count)
+         for col in range(u_count)]
+        for row in range(t_count + 1)
+    ]
+    for row in range(t_count):
+        for col in range(u_count):
+            material_index = 3 if rng.random() < 0.08 else 1
+            if rng.random() < 0.94:
+                add_strut(nodes[row][col], nodes[row+1][col],
+                          unit * rng.uniform(0.006, 0.011), material_index)
+            if row % 2 == 0 and rng.random() < 0.72:
+                add_strut(nodes[row][col], nodes[row][(col+1) % u_count],
+                          unit * rng.uniform(0.005, 0.009),
+                          2 if rng.random() < 0.12 else 1)
+            if row % 2 == (col % 2):
+                target_col = (col + 1) % u_count
+                if rng.random() < 0.78:
+                    add_strut(nodes[row][col], nodes[row+1][target_col],
+                              unit * rng.uniform(0.0055, 0.009),
+                              3 if rng.random() < 0.14 else 1)
+            elif rng.random() < 0.33:
+                target_col = (col - 1) % u_count
+                add_strut(nodes[row][col], nodes[row+1][target_col],
+                          unit * rng.uniform(0.005, 0.008), 1)
+        if row % 3 == 0:
+            for col in range(u_count):
+                if rng.random() < 0.90:
+                    add_strut(nodes[row][col], nodes[row][(col+1) % u_count],
+                              unit * rng.uniform(0.0045, 0.008),
+                              2 if rng.random() < 0.08 else 1)
+
+    # Ceramic shell patches are broad and irregularly broken, leaving portions of the frame exposed.
+    shell_v, shell_f, shell_mats = [], [], []
+    section_count = rng.randint(3, 5)
+    segment_span = (t_end - t_start) / section_count
+    for section in range(section_count):
+        span_start = t_start + section * segment_span + segment_span * rng.uniform(0.04, 0.15)
+        span_end = t_start + (section+1) * segment_span - segment_span * rng.uniform(0.03, 0.16)
+        section_rows = max(5, int(t_count * (span_end-span_start) / max(1e-5, t_end-t_start)))
+        shell_u_count = max(6, u_count)
+        base = len(shell_v)
+        # A slightly lifted, thick-looking outer shell following the top half of the organic tube.
+        for r in range(section_rows + 1):
+            t = span_start + (span_end-span_start) * r / section_rows
+            for c in range(shell_u_count + 1):
+                u = 0.04 + (math.pi - 0.08) * c / shell_u_count
+                shell_v.append(tuple(point_at(t, u, unit * 0.018)))
+        for r in range(section_rows):
+            for c in range(shell_u_count):
+                t_mid = span_start + (span_end-span_start) * (r + 0.5) / section_rows
+                u_mid = 0.04 + (math.pi - 0.08) * (c + 0.5) / shell_u_count
+                patch_noise = (
+                    math.sin(6.0 * t_mid + phase) * math.cos(2.7 * u_mid - phase)
+                    + 0.45 * math.sin(11.0 * t_mid - 3.0 * u_mid + phase)
+                )
+                # Drop clustered face groups and a few individual cells for eroded shell windows.
+                if patch_noise > rng.uniform(0.62, 1.30) or rng.random() < 0.035:
+                    continue
+                shell_f.append((
+                    base + r*(shell_u_count+1) + c,
+                    base + (r+1)*(shell_u_count+1) + c,
+                    base + (r+1)*(shell_u_count+1) + c + 1,
+                    base + r*(shell_u_count+1) + c + 1,
+                ))
+                if patch_noise < -0.45 and rng.random() < 0.16:
+                    shell_mats.append((len(shell_f)-1, 4))
+                else:
+                    shell_mats.append((len(shell_f)-1, 0))
+
+    # A few dark fracture ribs lie along some shell edges and make the openings read as designed damage.
+    for index in range(rng.randint(7, 12)):
+        t = rng.uniform(t_start, t_end)
+        u = rng.choice((0.0, math.pi, rng.uniform(0.18, 0.50), rng.uniform(2.65, 2.95)))
+        p0 = point_at(t, u, unit * 0.025)
+        p1 = point_at(min(t_end, t + rng.uniform(0.04, 0.12)), u + rng.uniform(-0.08, 0.08), unit * 0.025)
+        start_face = len(shell_f)
+        _append_tube(shell_v, shell_f, (p0, p1), unit * rng.uniform(0.006, 0.011),
+                     sides=4, closed=False, cap_ends=False)
+        shell_mats.extend((face_index, 4) for face_index in range(start_face, len(shell_f)))
+
+    # Metallic bead constellations: seeded hotspots with mixed sphere sizes, not a uniform sprinkle.
+    bead_v, bead_f, bead_mats = [], [], []
+    cluster_count = rng.randint(5, 9)
+    for cluster_index in range(cluster_count):
+        center_t = rng.uniform(t_start, t_end)
+        center_u = rng.uniform(0.0, math.tau)
+        cluster_center = point_at(center_t, center_u, unit * 0.026)
+        for pearl_index in range(rng.randint(3, 8)):
+            if pearl_index == 0 or rng.random() < 0.20:
+                radius = unit * rng.uniform(0.035, 0.070)
+            else:
+                radius = unit * rng.uniform(0.012, 0.036)
+            tangent_offset = Vector((
+                rng.uniform(-0.055, 0.055),
+                rng.uniform(-0.055, 0.055),
+                rng.uniform(-0.050, 0.050),
+            )) * unit
+            center = cluster_center + tangent_offset
+            face_ids = _append_uv_sphere(
+                bead_v, bead_f, tuple(center), radius, segments=8, rings=5
+            )
+            bead_material = rng.choices((2, 3, 4), weights=(6, 3, 1), k=1)[0]
+            bead_mats.extend((face_index, bead_material) for face_index in face_ids)
+
+    if not shell_f or not lattice_f or not bead_f:
+        raise RuntimeError("Alien Lattice did not generate all three geometry layers")
+    return [
+        ("Shell", shell_v, shell_f, {"face_material_indices": shell_mats}),
+        ("Triangular Frame", lattice_v, lattice_f, {"face_material_indices": lattice_mats}),
+        ("Metal Beads", bead_v, bead_f, {"face_material_indices": bead_mats}),
+    ]
+
+
+
 def _build_spike_bloom(settings, rng):
     """A dark mechanical-organic orb with irregular tapered spikes and warm inner accents."""
     vertices, faces = [], []
@@ -1087,7 +1237,7 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
     target_collection.objects.link(obj)
 
     rng = random.Random(seed ^ 0x5A17)
-    object_family = next((family for family in ("Cyber Module", "Folded Ribbon", "Prism Reactor", "Faceted Totem", "Hex Armor", "Circuit Core", "Orbital Particle", "Cellular Void", "Spike Bloom") if family in name), None)
+    object_family = next((family for family in ("Alien Lattice", "Cyber Module", "Folded Ribbon", "Prism Reactor", "Faceted Totem", "Hex Armor", "Circuit Core", "Orbital Particle", "Cellular Void", "Spike Bloom") if family in name), None)
     if object_family:
         palettes = {
             "Cyber Module": [
@@ -1153,6 +1303,13 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
                 ("Amber plasma", (1.0,0.12,0.012), 0.26, 0.17, (1.0,0.045,0.0), 3.4),
                 ("Blue micro light", (0.015,0.20,0.82), 0.30, 0.16, (0.0,0.08,1.0), 2.8),
             ],
+            "Alien Lattice": [
+                ("Porcelain shell", (0.82,0.86,0.84), 0.24, 0.25, None, 0.0),
+                ("Obsidian titanium frame", (0.022,0.030,0.038), 0.92, 0.16, None, 0.0),
+                ("Champagne bead", (0.54,0.33,0.15), 0.88, 0.13, None, 0.0),
+                ("Machined silver", (0.62,0.70,0.76), 0.90, 0.14, None, 0.0),
+                ("Oxidized seam", (0.20,0.24,0.24), 0.58, 0.30, None, 0.0),
+            ],
         }
         palette = palettes[object_family]
         for label, color, metallic, roughness, emission, strength in palette:
@@ -1168,6 +1325,7 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
             "Orbital Particle": [5,4,2,1,1],
             "Cellular Void": [8,3,1,1],
             "Spike Bloom": [6,4,2,1,1],
+            "Alien Lattice": [7,5,3,3,1],
         }
         weights = weight_map[object_family]
         for index, polygon in enumerate(mesh.polygons):
@@ -1183,9 +1341,13 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
                     mesh.polygons[polygon_index].material_index = max(0, min(material_index, len(palette)-1))
         obj.color = palette[1][1] + (1.0,)
         for polygon in mesh.polygons:
-            polygon.use_smooth = object_family in ("Folded Ribbon", "Prism Reactor", "Orbital Particle", "Cellular Void", "Spike Bloom")
+            polygon.use_smooth = object_family in ("Folded Ribbon", "Prism Reactor", "Orbital Particle", "Cellular Void", "Spike Bloom", "Alien Lattice")
         if hasattr(mesh, "use_auto_smooth"):
             mesh.use_auto_smooth = True
+        if object_family == "Alien Lattice" and "Shell" in name:
+            solidify = obj.modifiers.new("Thin ceramic shell", "SOLIDIFY")
+            solidify.thickness = -0.018
+            solidify.offset = -0.65
         bevel = obj.modifiers.new("Micro bevels", "BEVEL")
         bounds = [Vector(v.co) for v in mesh.vertices]
         if bounds:
@@ -1202,6 +1364,7 @@ def _new_mesh_object(context, name, vertices, faces, seed, face_material_overrid
                 "Orbital Particle": 0.004,
                 "Cellular Void": 0.003,
                 "Spike Bloom": 0.005,
+                "Alien Lattice": 0.004,
             }.get(object_family, 0.010)
             bevel.width = max(0.003, min(max_extent*family_factor, min_extent*0.12))
             bevel.segments = 3
@@ -1691,7 +1854,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.7.2"
+    tree["vinlab_version"] = "0.8.0"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -1863,7 +2026,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinlab_version"] = "0.7.2"
+    tree["vinlab_version"] = "0.8.0"
     tree["vinlab_feature"] = "noise_color_ramp_scatter"
     tree["vinlab_source_collection"] = collection.name
     return tree, sockets
@@ -1938,6 +2101,36 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
             "CELLULAR_VOID": _build_cellular_void,
             "SPIKE_BLOOM": _build_spike_bloom,
         }
+        if shape_type == "ALIEN_LATTICE":
+            created_parts = []
+            try:
+                layer_data = _build_alien_lattice_parts(settings, rng)
+                for layer_name, layer_vertices, layer_faces, overrides in layer_data:
+                    layer_obj = _new_mesh_object(
+                        context, f"VINLAB · Alien Lattice · {layer_name}",
+                        layer_vertices, layer_faces, settings.seed, overrides
+                    )
+                    layer_obj["vinlab_shape_type"] = shape_type
+                    layer_obj["vinlab_seed"] = settings.seed
+                    layer_obj["vinlab_version"] = "0.8.0"
+                    layer_obj["vinlab_lattice_layer"] = layer_name
+                    created_parts.append(layer_obj)
+                bpy.ops.object.select_all(action="DESELECT")
+                for layer_obj in created_parts:
+                    layer_obj.select_set(True)
+                if created_parts:
+                    context.view_layer.objects.active = created_parts[0]
+            except Exception as exc:
+                for layer_obj in created_parts:
+                    if layer_obj.name in bpy.data.objects:
+                        bpy.data.objects.remove(layer_obj, do_unlink=True)
+                self.report({"ERROR"}, f"Alien Lattice generation failed: {exc}")
+                return {"CANCELLED"}
+            total_vertices = sum(len(obj.data.vertices) for obj in created_parts if obj.data)
+            total_faces = sum(len(obj.data.polygons) for obj in created_parts if obj.data)
+            self.report({"INFO"}, f"Generated Alien Lattice · {len(created_parts)} editable layers / {total_vertices:,} verts / {total_faces:,} faces")
+            return {"FINISHED"}
+
         builder = builders.get(shape_type)
         if builder is None:
             self.report({"ERROR"}, "Unknown shape family")
@@ -1973,7 +2166,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
                     part.data.name = part.name + " Mesh"
             part["vinlab_shape_type"] = shape_type
             part["vinlab_seed"] = settings.seed
-            part["vinlab_version"] = "0.7.2"
+            part["vinlab_version"] = "0.8.0"
         if parts:
             context.view_layer.objects.active = obj if obj in parts else parts[0]
         self.report(
@@ -2129,7 +2322,7 @@ class VINLAB_OT_build_field_scatter(bpy.types.Operator):
                     modifier[identifier] = value
             obj["vinlab_scatter_collection"] = settings.scatter_collection.name
             obj["vinlab_scatter_mask"] = "Noise Texture -> Color Ramp -> Threshold -> Set Position Selection"
-            obj["vinlab_version"] = "0.7.2"
+            obj["vinlab_version"] = "0.8.0"
             context.view_layer.update()
         except Exception as exc:
             self.report({"ERROR"}, f"Noise / Color Ramp Scatter failed: {exc}")
@@ -2167,6 +2360,8 @@ class VINLAB_PT_main(bpy.types.Panel):
         box.prop(settings, "detail")
         box.prop(settings, "size")
         box.prop(settings, "separate_parts")
+        if settings.shape_type == "ALIEN_LATTICE":
+            box.label(text="Generates 3 editable layers: shell, triangular frame, beads.")
         if settings.shape_type in {"RANDOM", "TWISTED_COLUMN", "FUTURE_SCULPTURE"}:
             box.prop(settings, "twist")
         if settings.shape_type in {"RANDOM", "BRANCHING_FORM"}:
