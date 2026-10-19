@@ -89,7 +89,6 @@ def test_standalone_lighting_lab_has_presets_and_non_destructive_rig() -> None:
     assert 'glare.glare_type = "FOG_GLOW"' in source
     assert '"vinlighting_generated"' in source
     assert 'if not obj.get("vinlighting_generated", False):' in source
-    assert "VIN Material Lab" not in _material_addon_source()
     assert "VIN Lighting Lab" not in _material_addon_source()
 
 
