@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 6, 0),
+    "version": (0, 7, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -29,6 +29,7 @@ ANIMATION_ITEMS = [
     ("LIVING", "Living Entity", "Organic breathing and noise-driven local deformation"),
     ("DRIFT", "3D Drift", "Float through an independent three-axis organic path"),
     ("RADIAL", "Radial Pulse", "Send a traveling radial wave through the mesh surface"),
+    ("LATTICE_PULSE", "Lattice Pulse", "Send a masked animated vibration through an organic frame or shell"),
 ]
 ANIMATION_LABELS = {identifier: label for identifier, label, _description in ANIMATION_ITEMS}
 
@@ -76,7 +77,7 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         default=settings.animation_speed, min_value=0.0, max_value=20.0,
     )
     amount_label = "Amount"
-    amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type in {"LIVING", "RADIAL"} else 10.0)
+    amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type in {"LIVING", "RADIAL", "LATTICE_PULSE"} else 10.0)
     amount_default = min(settings.animation_amount, amount_limit)
     if animation_type == "TWIST":
         amount_label = "Twist Strength"
@@ -90,6 +91,8 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         amount_label = "Drift Radius"
     elif animation_type == "RADIAL":
         amount_label = "Wave Strength"
+    elif animation_type == "LATTICE_PULSE":
+        amount_label = "Lattice Pulse Strength"
     amount_socket = _add_interface_socket(
         tree, amount_label, "INPUT", "NodeSocketFloat",
         default=amount_default, min_value=0.0, max_value=amount_limit,
@@ -124,6 +127,19 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         extra_sockets["wave_subdivision"] = _add_interface_socket(
             tree, "Wave Detail", "INPUT", "NodeSocketInt",
             default=settings.radial_subdivision, min_value=0, max_value=4,
+        )
+    if animation_type == "LATTICE_PULSE":
+        extra_sockets["lattice_noise_scale"] = _add_interface_socket(
+            tree, "Lattice Noise Scale", "INPUT", "NodeSocketFloat",
+            default=settings.lattice_noise_scale, min_value=0.05, max_value=20.0,
+        )
+        extra_sockets["lattice_wave_frequency"] = _add_interface_socket(
+            tree, "Lattice Wave Frequency", "INPUT", "NodeSocketFloat",
+            default=settings.lattice_wave_frequency, min_value=0.1, max_value=30.0,
+        )
+        extra_sockets["lattice_mask_threshold"] = _add_interface_socket(
+            tree, "Lattice Mask Threshold", "INPUT", "NodeSocketFloat",
+            default=settings.lattice_mask_threshold, min_value=0.0, max_value=1.0,
         )
     geo_out = _add_interface_socket(tree, "Geometry", "OUTPUT", "NodeSocketGeometry")
     nodes, links = tree.nodes, tree.links
@@ -445,11 +461,70 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         links.new(radial_offset.outputs["Vector"], set_position.inputs["Offset"])
         links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
 
+    elif animation_type == "LATTICE_PULSE":
+        # A masked 4D Noise field drives a traveling sine pulse along the surface normals.
+        position = nodes.new("GeometryNodeInputPosition")
+        position.location = (-900, 260)
+        normal = nodes.new("GeometryNodeInputNormal")
+        normal.location = (-680, -420)
+
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.location = (-650, 180)
+        noise.label = "Animated lattice vibration · 4D Noise"
+        noise.noise_dimensions = "4D"
+        links.new(position.outputs["Position"], noise.inputs["Vector"])
+        links.new(_find_socket(group_in.outputs, "Lattice Noise Scale"), noise.inputs["Scale"])
+        links.new(time_signal.outputs[0], noise.inputs["W"])
+
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.location = (-400, 180)
+        ramp.label = "Editable damaged-shell influence mask"
+        ramp.color_ramp.elements[0].position = 0.25
+        ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 0.0)
+        ramp.color_ramp.elements[1].position = 0.72
+        ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+        links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+
+        mask_test = _math_node(nodes, "GREATER_THAN", "Only selected noise zones respond", (-160, 170))
+        links.new(ramp.outputs["Alpha"], mask_test.inputs[0])
+        links.new(_find_socket(group_in.outputs, "Lattice Mask Threshold"), mask_test.inputs[1])
+
+        spatial_wave = _math_node(nodes, "MULTIPLY", "Noise × Wave Frequency", (-380, -120))
+        links.new(noise.outputs["Fac"], spatial_wave.inputs[0])
+        links.new(_find_socket(group_in.outputs, "Lattice Wave Frequency"), spatial_wave.inputs[1])
+        time_wave = _math_node(nodes, "SUBTRACT", "Traveling phase = spatial field − time", (-140, -100))
+        links.new(spatial_wave.outputs[0], time_wave.inputs[0])
+        links.new(time_signal.outputs[0], time_wave.inputs[1])
+        wave_sine = _math_node(nodes, "SINE", "Organic traveling vibration", (70, -80))
+        links.new(time_wave.outputs[0], wave_sine.inputs[0])
+
+        wave_strength = _math_node(nodes, "MULTIPLY", "Wave × selected amount", (270, -80))
+        links.new(wave_sine.outputs[0], wave_strength.inputs[0])
+        links.new(_find_socket(group_in.outputs, amount_label), wave_strength.inputs[1])
+        weighted_strength = _math_node(nodes, "MULTIPLY", "Mask-weighted deformation", (470, -80))
+        links.new(wave_strength.outputs[0], weighted_strength.inputs[0])
+        links.new(ramp.outputs["Alpha"], weighted_strength.inputs[1])
+
+        normal_offset = nodes.new("ShaderNodeVectorMath")
+        normal_offset.operation = "SCALE"
+        normal_offset.location = (500, -350)
+        normal_offset.label = "Vibration along the surface normal"
+        links.new(normal.outputs["Normal"], normal_offset.inputs["Vector"])
+        links.new(weighted_strength.outputs[0], normal_offset.inputs["Scale"])
+
+        set_position = nodes.new("GeometryNodeSetPosition")
+        set_position.location = (750, 160)
+        set_position.label = "Per-object lattice pulse deformation"
+        links.new(_find_socket(group_in.outputs, "Geometry"), set_position.inputs["Geometry"])
+        links.new(mask_test.outputs[0], set_position.inputs["Selection"])
+        links.new(normal_offset.outputs["Vector"], set_position.inputs["Offset"])
+        links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
+
     else:
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.6.0"
+    tree["vinmotion_version"] = "0.7.0"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -642,7 +717,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.6.0"
+    tree["vinmotion_version"] = "0.7.0"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -804,6 +879,9 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     entity_subdivision: IntProperty(name="Surface Detail", default=2, min=0, max=4)
     radial_frequency: FloatProperty(name="Wave Frequency", default=2.5, min=0.1, max=20.0, precision=2)
     radial_subdivision: IntProperty(name="Wave Detail", default=2, min=0, max=4)
+    lattice_noise_scale: FloatProperty(name="Lattice Noise Scale", default=1.7, min=0.05, max=20.0, precision=2)
+    lattice_wave_frequency: FloatProperty(name="Lattice Wave Frequency", default=3.5, min=0.1, max=30.0, precision=2)
+    lattice_mask_threshold: FloatProperty(name="Lattice Mask Threshold", default=0.28, min=0.0, max=1.0, precision=2)
 
     scatter_collection: PointerProperty(
         name="Source Collection",
@@ -907,6 +985,9 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
                     "subdivision": settings.entity_subdivision,
                     "wave_frequency": settings.radial_frequency,
                     "wave_subdivision": settings.radial_subdivision,
+                    "lattice_noise_scale": settings.lattice_noise_scale,
+                    "lattice_wave_frequency": settings.lattice_wave_frequency,
+                    "lattice_mask_threshold": settings.lattice_mask_threshold,
                 }
                 for key, socket in extra_sockets.items():
                     identifier = getattr(socket, "identifier", None)
@@ -944,6 +1025,9 @@ class VINMOTION_OT_reset_motion(bpy.types.Operator):
         settings.entity_subdivision = 2
         settings.radial_frequency = 2.5
         settings.radial_subdivision = 2
+        settings.lattice_noise_scale = 1.7
+        settings.lattice_wave_frequency = 3.5
+        settings.lattice_mask_threshold = 0.28
         settings.spawn_speed_variance = 0.35
         settings.spawn_amount_variance = 0.25
         settings.spawn_phase_range = 6.283
@@ -987,7 +1071,7 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
         safe_max = max(safe_min, settings.spawn_max_scale)
         result_collection = bpy.data.collections.new("VIN Motion · Surface Spawn")
         context.scene.collection.children.link(result_collection)
-        animation_types = ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL")
+        animation_types = ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL", "LATTICE_PULSE")
         spawned = []
         failure = None
         try:
@@ -1053,6 +1137,9 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
                     "subdivision": settings.entity_subdivision,
                     "wave_frequency": settings.radial_frequency,
                     "wave_subdivision": settings.radial_subdivision,
+                    "lattice_noise_scale": settings.lattice_noise_scale,
+                    "lattice_wave_frequency": settings.lattice_wave_frequency,
+                    "lattice_mask_threshold": settings.lattice_mask_threshold,
                 }
                 for key, socket in extra_sockets.items():
                     identifier = getattr(socket, "identifier", None)
@@ -1247,6 +1334,11 @@ class VINMOTION_PT_animation(bpy.types.Panel):
             box.prop(settings, "radial_frequency")
             box.prop(settings, "radial_subdivision")
             box.label(text="Wave passes through the mesh from its local origin.")
+        elif settings.animation_type == "LATTICE_PULSE":
+            box.prop(settings, "lattice_noise_scale")
+            box.prop(settings, "lattice_wave_frequency")
+            box.prop(settings, "lattice_mask_threshold")
+            box.label(text="Noise-mask zones pulse along surface normals; use small strength on thin struts.")
         elif settings.animation_type == "DRIFT":
             box.label(text="Uses Speed, Phase and Drift Radius to create an oval 3D path.")
         box.label(text="Applies to selected objects; each gets its own graph.")
