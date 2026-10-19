@@ -5,6 +5,7 @@ on:
     paths:
       - "blender_addon/**"
       - "tests/blender_runtime_smoke.py"
+      - "tests/vin_motion_lab_runtime_smoke.py"
       - ".github/workflows/blender-runtime.yml"
   pull_request:
     paths:
@@ -22,9 +23,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y blender
-      - name: Run add-on in background Blender
+      - name: Test VIN Procedural Lab in background Blender
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           blender --background --factory-startup --python tests/blender_runtime_smoke.py 2>&1 | tee blender-runtime.log
           grep -q "VIN Procedural Lab Blender runtime smoke test passed." blender-runtime.log
+      - name: Test VIN Motion Lab in background Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python tests/vin_motion_lab_runtime_smoke.py 2>&1 | tee vin-motion-runtime.log
+          grep -q "VIN Motion Lab runtime smoke test passed." vin-motion-runtime.log
