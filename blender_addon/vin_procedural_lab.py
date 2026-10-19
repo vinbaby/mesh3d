@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Procedural Lab",
     "author": "VIN Studio",
-    "version": (0, 7, 0),
+    "version": (0, 7, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab",
     "description": "Generate procedural 3D shapes, future sculptures, and Geometry Nodes animations",
@@ -1691,7 +1691,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinlab_version"] = "0.7.0"
+    tree["vinlab_version"] = "0.7.1"
     tree["vinlab_animation_type"] = animation_type
     tree["vinlab_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinlab_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -1863,7 +1863,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinlab_version"] = "0.7.0"
+    tree["vinlab_version"] = "0.7.1"
     tree["vinlab_feature"] = "noise_color_ramp_scatter"
     tree["vinlab_source_collection"] = collection.name
     return tree, sockets
@@ -1973,7 +1973,7 @@ class VINLAB_OT_generate_shape(bpy.types.Operator):
                     part.data.name = part.name + " Mesh"
             part["vinlab_shape_type"] = shape_type
             part["vinlab_seed"] = settings.seed
-            part["vinlab_version"] = "0.7.0"
+            part["vinlab_version"] = "0.7.1"
         if parts:
             context.view_layer.objects.active = obj if obj in parts else parts[0]
         self.report(
@@ -2129,7 +2129,7 @@ class VINLAB_OT_build_field_scatter(bpy.types.Operator):
                     modifier[identifier] = value
             obj["vinlab_scatter_collection"] = settings.scatter_collection.name
             obj["vinlab_scatter_mask"] = "Noise Texture -> Color Ramp -> Threshold -> Set Position Selection"
-            obj["vinlab_version"] = "0.7.0"
+            obj["vinlab_version"] = "0.7.1"
             context.view_layer.update()
         except Exception as exc:
             self.report({"ERROR"}, f"Noise / Color Ramp Scatter failed: {exc}")
