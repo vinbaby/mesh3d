@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -10,6 +10,8 @@ bl_info = {
 
 import bpy
 import math
+import random
+from mathutils import Vector, Quaternion
 from bpy.props import (
     EnumProperty,
     FloatProperty,
@@ -84,6 +86,10 @@ def _build_animation_group(settings, animation_type):
         tree, amount_label, "INPUT", "NodeSocketFloat",
         default=amount_default, min_value=0.0, max_value=amount_limit,
     )
+    phase_socket = _add_interface_socket(
+        tree, "Phase", "INPUT", "NodeSocketFloat",
+        default=settings.animation_phase, min_value=-100.0, max_value=100.0,
+    )
     extra_sockets = {}
     if animation_type == "LIVING":
         extra_sockets["noise_scale"] = _add_interface_socket(
@@ -117,6 +123,10 @@ def _build_animation_group(settings, animation_type):
     time_mul = _math_node(nodes, "MULTIPLY", "Time × Speed", (-650, -260))
     links.new(_find_socket(scene_time.outputs, "Seconds"), time_mul.inputs[0])
     links.new(_find_socket(group_in.outputs, "Speed"), time_mul.inputs[1])
+    phase_add = _math_node(nodes, "ADD", "Per-object phase offset", (-430, -470))
+    links.new(time_mul.outputs[0], phase_add.inputs[0])
+    links.new(_find_socket(group_in.outputs, "Phase"), phase_add.inputs[1])
+    time_signal = phase_add
 
     if animation_type == "BOB":
         sine = _math_node(nodes, "SINE", "Smooth oscillation", (-420, -260))
@@ -126,7 +136,7 @@ def _build_animation_group(settings, animation_type):
         set_position = nodes.new("GeometryNodeSetPosition")
         set_position.location = (360, 100)
         set_position.label = "Move entire geometry"
-        links.new(time_mul.outputs[0], sine.inputs[0])
+        links.new(time_signal.outputs[0], sine.inputs[0])
         links.new(sine.outputs[0], amplitude.inputs[0])
         links.new(_find_socket(group_in.outputs, amount_label), amplitude.inputs[1])
         links.new(amplitude.outputs[0], combine.inputs["Z"])
@@ -140,7 +150,7 @@ def _build_animation_group(settings, animation_type):
         transform = nodes.new("GeometryNodeTransform")
         transform.location = (360, 100)
         transform.label = "Continuous rotation"
-        links.new(time_mul.outputs[0], combine.inputs["Z"])
+        links.new(time_signal.outputs[0], combine.inputs["Z"])
         links.new(_find_socket(group_in.outputs, "Geometry"), transform.inputs["Geometry"])
         links.new(combine.outputs["Vector"], transform.inputs["Rotation"])
         links.new(transform.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
@@ -154,7 +164,7 @@ def _build_animation_group(settings, animation_type):
         transform = nodes.new("GeometryNodeTransform")
         transform.location = (470, 100)
         transform.label = "Uniform scale pulse"
-        links.new(time_mul.outputs[0], sine.inputs[0])
+        links.new(time_signal.outputs[0], sine.inputs[0])
         links.new(sine.outputs[0], amplitude.inputs[0])
         links.new(_find_socket(group_in.outputs, amount_label), amplitude.inputs[1])
         links.new(amplitude.outputs[0], add_one.inputs[0])
@@ -177,7 +187,7 @@ def _build_animation_group(settings, animation_type):
         links.new(separate.outputs["Z"], vertical_twist.inputs[0])
         links.new(_find_socket(group_in.outputs, amount_label), vertical_twist.inputs[1])
         links.new(vertical_twist.outputs[0], angle_add.inputs[0])
-        links.new(time_mul.outputs[0], angle_add.inputs[1])
+        links.new(time_signal.outputs[0], angle_add.inputs[1])
 
         cosine = _math_node(nodes, "COSINE", "Cos(angle)", (0, 430))
         sine = _math_node(nodes, "SINE", "Sin(angle)", (0, 200))
@@ -235,7 +245,7 @@ def _build_animation_group(settings, animation_type):
         noise.noise_dimensions = "4D"
         links.new(position.outputs["Position"], noise.inputs["Vector"])
         links.new(_find_socket(group_in.outputs, "Organic Noise Scale"), noise.inputs["Scale"])
-        links.new(time_mul.outputs[0], noise.inputs["W"])
+        links.new(time_signal.outputs[0], noise.inputs["W"])
 
         ramp = nodes.new("ShaderNodeValToRGB")
         ramp.location = (-170, -80)
@@ -271,7 +281,7 @@ def _build_animation_group(settings, animation_type):
         # Slow radial breathing is intentionally slower than the surface-noise motion.
         breath_rate = _math_node(nodes, "MULTIPLY", "Breath rate", (-650, -700))
         breath_rate.inputs[1].default_value = 0.55
-        links.new(time_mul.outputs[0], breath_rate.inputs[0])
+        links.new(time_signal.outputs[0], breath_rate.inputs[0])
         breath_wave = _math_node(nodes, "SINE", "Soft breathing cycle", (-420, -700))
         links.new(breath_rate.outputs[0], breath_wave.inputs[0])
         breath_amount = _math_node(nodes, "MULTIPLY", "Breathing amplitude", (-200, -700))
@@ -332,7 +342,7 @@ def _build_animation_group(settings, animation_type):
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
     tree["vinmotion_geometry_input"] = getattr(geo_in, "identifier", "Geometry")
     tree["vinmotion_geometry_output"] = getattr(geo_out, "identifier", "Geometry")
-    return tree, speed_socket, amount_socket, extra_sockets
+    return tree, speed_socket, amount_socket, extra_sockets, phase_socket
 
 
 
@@ -509,6 +519,7 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     animation_type: EnumProperty(name="Animation", items=ANIMATION_ITEMS, default="BOB")
     animation_speed: FloatProperty(name="Speed", default=1.0, min=0.0, max=20.0, precision=2)
     animation_amount: FloatProperty(name="Amount", description="Height, pulse intensity, twist strength, or living surface deformation", default=0.5, min=0.0, max=10.0, precision=2)
+    animation_phase: FloatProperty(name="Phase", description="Offset the animation clock to desynchronize this object", default=0.0, min=-100.0, max=100.0, precision=2)
     entity_noise_scale: FloatProperty(name="Organic Noise Scale", default=1.6, min=0.05, max=20.0, precision=2)
     entity_breathing: FloatProperty(name="Breathing", default=0.18, min=0.0, max=0.8, precision=2)
     entity_mask_threshold: FloatProperty(name="Mask Threshold", default=0.30, min=0.0, max=1.0, precision=2)
@@ -519,6 +530,32 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
         description="Separate source objects to instance over the active Plane",
         type=bpy.types.Collection,
     )
+    spawn_source_collection: PointerProperty(
+        name="Spawn Source Collection",
+        description="Collection of separate source objects to copy onto the Plane",
+        type=bpy.types.Collection,
+    )
+    spawn_count: IntProperty(name="Spawn Count", default=24, min=1, max=300)
+    spawn_seed: IntProperty(name="Spawn Seed", default=71, min=0, max=9999999)
+    spawn_min_scale: FloatProperty(name="Min Scale", default=0.55, min=0.01, max=10.0, precision=2)
+    spawn_max_scale: FloatProperty(name="Max Scale", default=1.15, min=0.01, max=10.0, precision=2)
+    spawn_surface_offset: FloatProperty(name="Surface Offset", default=0.02, min=0.0, max=10.0, precision=3)
+    spawn_align_normal: BoolProperty(name="Align to Surface", default=True)
+    spawn_animation_mode: EnumProperty(
+        name="Motion Assignment",
+        items=[
+            ("RANDOM", "Random per Object", "Give each object its own random motion preset"),
+            ("CURRENT", "Use Selected Motion", "Use the selected animation preset on each object"),
+        ],
+        default="RANDOM",
+    )
+    spawn_speed_variance: FloatProperty(name="Speed Variation", default=0.35, min=0.0, max=1.0, precision=2)
+    spawn_amount_variance: FloatProperty(name="Amount Variation", default=0.25, min=0.0, max=1.0, precision=2)
+    spawn_phase_range: FloatProperty(name="Phase Spread", default=6.283, min=0.0, max=50.0, precision=2)
+    spawn_start_frame: IntProperty(name="First Spawn Frame", default=1, min=1, max=100000)
+    spawn_stagger_frames: IntProperty(name="Spawn Stagger", default=72, min=0, max=100000)
+    spawn_growth_frames: IntProperty(name="Growth Frames", default=16, min=1, max=1000)
+
     scatter_density: FloatProperty(name="Density", default=2.0, min=0.01, max=100.0, precision=2)
     scatter_noise_scale: FloatProperty(name="Noise Scale", default=1.4, min=0.01, max=50.0, precision=2)
     scatter_field_strength: FloatProperty(name="Field Motion", default=0.35, min=0.0, max=10.0, precision=2)
@@ -542,7 +579,7 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
             return {"CANCELLED"}
         settings = context.scene.vinmotion_settings
         try:
-            tree, speed_socket, amount_socket, extra_sockets = _build_animation_group(settings, settings.animation_type)
+            tree, speed_socket, amount_socket, extra_sockets, phase_socket = _build_animation_group(settings, settings.animation_type)
             modifier = obj.modifiers.get("VIN Motion · Animation")
             if modifier is None or modifier.type != "NODES":
                 modifier = obj.modifiers.new(name="VIN Motion · Animation", type="NODES")
@@ -554,6 +591,9 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
             if amount_id:
                 amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type == "LIVING" else 10.0)
                 modifier[amount_id] = min(settings.animation_amount, amount_limit)
+            phase_id = getattr(phase_socket, "identifier", None)
+            if phase_id:
+                modifier[phase_id] = settings.animation_phase
             extra_values = {
                 "noise_scale": settings.entity_noise_scale,
                 "breathing": settings.entity_breathing,
@@ -640,6 +680,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         box.label(text="1 · Object Animation", icon="NODETREE")
         box.prop(settings, "animation_type")
         box.prop(settings, "animation_speed")
+        box.prop(settings, "animation_phase")
         if settings.animation_type == "BOB":
             amount_label = "Height"
         elif settings.animation_type == "PULSE":
