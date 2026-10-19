@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 5, 0),
+    "version": (0, 6, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -27,6 +27,8 @@ ANIMATION_ITEMS = [
     ("PULSE", "Scale Pulse", "Scale the geometry rhythmically"),
     ("TWIST", "Animated Twist", "Twist points around the Z axis over time"),
     ("LIVING", "Living Entity", "Organic breathing and noise-driven local deformation"),
+    ("DRIFT", "3D Drift", "Float through an independent three-axis organic path"),
+    ("RADIAL", "Radial Pulse", "Send a traveling radial wave through the mesh surface"),
 ]
 ANIMATION_LABELS = {identifier: label for identifier, label, _description in ANIMATION_ITEMS}
 
@@ -74,7 +76,7 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         default=settings.animation_speed, min_value=0.0, max_value=20.0,
     )
     amount_label = "Amount"
-    amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type == "LIVING" else 10.0)
+    amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type in {"LIVING", "RADIAL"} else 10.0)
     amount_default = min(settings.animation_amount, amount_limit)
     if animation_type == "TWIST":
         amount_label = "Twist Strength"
@@ -84,6 +86,10 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         amount_label = "Pulse Amount"
     elif animation_type == "BOB":
         amount_label = "Height"
+    elif animation_type == "DRIFT":
+        amount_label = "Drift Radius"
+    elif animation_type == "RADIAL":
+        amount_label = "Wave Strength"
     amount_socket = _add_interface_socket(
         tree, amount_label, "INPUT", "NodeSocketFloat",
         default=amount_default, min_value=0.0, max_value=amount_limit,
@@ -109,6 +115,15 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         extra_sockets["subdivision"] = _add_interface_socket(
             tree, "Surface Detail", "INPUT", "NodeSocketInt",
             default=settings.entity_subdivision, min_value=0, max_value=4,
+        )
+    if animation_type == "RADIAL":
+        extra_sockets["wave_frequency"] = _add_interface_socket(
+            tree, "Wave Frequency", "INPUT", "NodeSocketFloat",
+            default=settings.radial_frequency, min_value=0.1, max_value=20.0,
+        )
+        extra_sockets["wave_subdivision"] = _add_interface_socket(
+            tree, "Wave Detail", "INPUT", "NodeSocketInt",
+            default=settings.radial_subdivision, min_value=0, max_value=4,
         )
     geo_out = _add_interface_socket(tree, "Geometry", "OUTPUT", "NodeSocketGeometry")
     nodes, links = tree.nodes, tree.links
@@ -334,11 +349,107 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         links.new(new_position.outputs["Vector"], set_position.inputs["Position"])
         links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
 
+    elif animation_type == "DRIFT":
+        # Three independent sinusoidal axes create a smooth, looping, floating path.
+        x_time = _math_node(nodes, "MULTIPLY", "X drift frequency", (-430, -180))
+        x_time.inputs[1].default_value = 1.0
+        links.new(time_signal.outputs[0], x_time.inputs[0])
+        x_wave = _math_node(nodes, "SINE", "Horizontal drift X", (-220, -180))
+        links.new(x_time.outputs[0], x_wave.inputs[0])
+
+        y_time = _math_node(nodes, "MULTIPLY", "Y drift frequency", (-430, -390))
+        y_time.inputs[1].default_value = 0.73
+        links.new(time_signal.outputs[0], y_time.inputs[0])
+        y_phase = _math_node(nodes, "ADD", "Y drift phase", (-220, -390))
+        y_phase.inputs[1].default_value = 1.7
+        links.new(y_time.outputs[0], y_phase.inputs[0])
+        y_wave = _math_node(nodes, "SINE", "Horizontal drift Y", (0, -390))
+        links.new(y_phase.outputs[0], y_wave.inputs[0])
+
+        z_time = _math_node(nodes, "MULTIPLY", "Z drift frequency", (-430, -600))
+        z_time.inputs[1].default_value = 0.47
+        links.new(time_signal.outputs[0], z_time.inputs[0])
+        z_phase = _math_node(nodes, "ADD", "Z drift phase", (-220, -600))
+        z_phase.inputs[1].default_value = 0.8
+        links.new(z_time.outputs[0], z_phase.inputs[0])
+        z_wave = _math_node(nodes, "SINE", "Vertical drift Z", (0, -600))
+        links.new(z_phase.outputs[0], z_wave.inputs[0])
+
+        x_amount = _math_node(nodes, "MULTIPLY", "X × drift radius", (200, -180))
+        y_amount = _math_node(nodes, "MULTIPLY", "Y × drift radius", (200, -390))
+        z_amount = _math_node(nodes, "MULTIPLY", "Z × drift radius", (200, -600))
+        for wave, amount_node in ((x_wave, x_amount), (y_wave, y_amount), (z_wave, z_amount)):
+            links.new(wave.outputs[0], amount_node.inputs[0])
+            links.new(_find_socket(group_in.outputs, amount_label), amount_node.inputs[1])
+
+        combine = nodes.new("ShaderNodeCombineXYZ")
+        combine.location = (430, -320)
+        links.new(x_amount.outputs[0], combine.inputs["X"])
+        links.new(y_amount.outputs[0], combine.inputs["Y"])
+        links.new(z_amount.outputs[0], combine.inputs["Z"])
+
+        set_position = nodes.new("GeometryNodeSetPosition")
+        set_position.location = (650, 100)
+        set_position.label = "Independent 3D floating path"
+        links.new(_find_socket(group_in.outputs, "Geometry"), set_position.inputs["Geometry"])
+        links.new(combine.outputs["Vector"], set_position.inputs["Offset"])
+        links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
+
+    elif animation_type == "RADIAL":
+        # Subdivide first, then displace each vertex along its radial direction as a wave passes.
+        subdivide = nodes.new("GeometryNodeSubdivideMesh")
+        subdivide.location = (-650, 140)
+        subdivide.label = "Add geometry for a smooth travelling wave"
+        links.new(_find_socket(group_in.outputs, "Geometry"), subdivide.inputs["Mesh"])
+        links.new(_find_socket(group_in.outputs, "Wave Detail"), subdivide.inputs["Level"])
+
+        position = nodes.new("GeometryNodeInputPosition")
+        position.location = (-900, -100)
+        radial_length = nodes.new("ShaderNodeVectorMath")
+        radial_length.operation = "LENGTH"
+        radial_length.location = (-650, -130)
+        links.new(position.outputs["Position"], radial_length.inputs[0])
+
+        radial_phase = _math_node(nodes, "MULTIPLY", "Radius × wave frequency", (-430, -130))
+        links.new(radial_length.outputs["Value"], radial_phase.inputs[0])
+        links.new(_find_socket(group_in.outputs, "Wave Frequency"), radial_phase.inputs[1])
+
+        time_phase = _math_node(nodes, "MULTIPLY", "Time × wave speed", (-650, -420))
+        time_phase.inputs[1].default_value = 2.5
+        links.new(time_signal.outputs[0], time_phase.inputs[0])
+        phase_subtract = _math_node(nodes, "SUBTRACT", "Travelling wave phase", (-210, -180))
+        links.new(radial_phase.outputs[0], phase_subtract.inputs[0])
+        links.new(time_phase.outputs[0], phase_subtract.inputs[1])
+
+        wave_sine = _math_node(nodes, "SINE", "Radial shock wave", (0, -180))
+        links.new(phase_subtract.outputs[0], wave_sine.inputs[0])
+        wave_amount = _math_node(nodes, "MULTIPLY", "Wave × strength", (220, -180))
+        links.new(wave_sine.outputs[0], wave_amount.inputs[0])
+        links.new(_find_socket(group_in.outputs, amount_label), wave_amount.inputs[1])
+
+        radial_direction = nodes.new("ShaderNodeVectorMath")
+        radial_direction.operation = "NORMALIZE"
+        radial_direction.location = (-420, 180)
+        links.new(position.outputs["Position"], radial_direction.inputs[0])
+        radial_offset = nodes.new("ShaderNodeVectorMath")
+        radial_offset.operation = "SCALE"
+        radial_offset.location = (430, 80)
+        radial_offset.label = "Move vertices along radial direction"
+        links.new(radial_direction.outputs["Vector"], radial_offset.inputs["Vector"])
+        links.new(wave_amount.outputs[0], radial_offset.inputs["Scale"])
+
+        set_position = nodes.new("GeometryNodeSetPosition")
+        set_position.location = (680, 140)
+        set_position.label = "Travelling radial deformation"
+        links.new(subdivide.outputs["Mesh"], set_position.inputs["Geometry"])
+        links.new(radial_offset.outputs["Vector"], set_position.inputs["Offset"])
+        links.new(set_position.outputs["Geometry"], _find_socket(group_out.inputs, "Geometry"))
+
     else:
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.3.2"
+    tree["vinmotion_version"] = "0.6.0"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -531,7 +642,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.3.2"
+    tree["vinmotion_version"] = "0.6.0"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -691,6 +802,8 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     entity_breathing: FloatProperty(name="Breathing", default=0.18, min=0.0, max=0.8, precision=2)
     entity_mask_threshold: FloatProperty(name="Mask Threshold", default=0.30, min=0.0, max=1.0, precision=2)
     entity_subdivision: IntProperty(name="Surface Detail", default=2, min=0, max=4)
+    radial_frequency: FloatProperty(name="Wave Frequency", default=2.5, min=0.1, max=20.0, precision=2)
+    radial_subdivision: IntProperty(name="Wave Detail", default=2, min=0, max=4)
 
     scatter_collection: PointerProperty(
         name="Source Collection",
@@ -782,7 +895,7 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
                 if speed_id:
                     modifier[speed_id] = settings.animation_speed
                 if amount_id:
-                    amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type == "LIVING" else 10.0)
+                    amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type in {"LIVING", "RADIAL"} else 10.0)
                     modifier[amount_id] = min(settings.animation_amount, amount_limit)
                 if phase_id:
                     modifier[phase_id] = phase_value
@@ -792,6 +905,8 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
                     "breathing": settings.entity_breathing,
                     "threshold": settings.entity_mask_threshold,
                     "subdivision": settings.entity_subdivision,
+                    "wave_frequency": settings.radial_frequency,
+                    "wave_subdivision": settings.radial_subdivision,
                 }
                 for key, socket in extra_sockets.items():
                     identifier = getattr(socket, "identifier", None)
@@ -827,6 +942,8 @@ class VINMOTION_OT_reset_motion(bpy.types.Operator):
         settings.entity_breathing = 0.18
         settings.entity_mask_threshold = 0.30
         settings.entity_subdivision = 2
+        settings.radial_frequency = 2.5
+        settings.radial_subdivision = 2
         settings.spawn_speed_variance = 0.35
         settings.spawn_amount_variance = 0.25
         settings.spawn_phase_range = 6.283
@@ -870,7 +987,7 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
         safe_max = max(safe_min, settings.spawn_max_scale)
         result_collection = bpy.data.collections.new("VIN Motion · Surface Spawn")
         context.scene.collection.children.link(result_collection)
-        animation_types = ("BOB", "SPIN", "PULSE", "TWIST", "LIVING")
+        animation_types = ("BOB", "SPIN", "PULSE", "TWIST", "LIVING", "DRIFT", "RADIAL")
         spawned = []
         failure = None
         try:
@@ -934,6 +1051,8 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
                     "breathing": settings.entity_breathing,
                     "threshold": settings.entity_mask_threshold,
                     "subdivision": settings.entity_subdivision,
+                    "wave_frequency": settings.radial_frequency,
+                    "wave_subdivision": settings.radial_subdivision,
                 }
                 for key, socket in extra_sockets.items():
                     identifier = getattr(socket, "identifier", None)
@@ -1124,6 +1243,12 @@ class VINMOTION_PT_animation(bpy.types.Panel):
             box.prop(settings, "entity_mask_threshold")
             box.prop(settings, "entity_subdivision")
             box.label(text="Needs mesh vertices; higher Detail adds resolution.")
+        elif settings.animation_type == "RADIAL":
+            box.prop(settings, "radial_frequency")
+            box.prop(settings, "radial_subdivision")
+            box.label(text="Wave passes through the mesh from its local origin.")
+        elif settings.animation_type == "DRIFT":
+            box.label(text="Uses Speed, Phase and Drift Radius to create an oval 3D path.")
         box.label(text="Applies to selected objects; each gets its own graph.")
         row = box.row(align=True)
         row.operator("vinmotion.build_animation", text="Build on Selected", icon="ACTION")
