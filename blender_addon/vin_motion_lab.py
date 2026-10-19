@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 4, 0),
+    "version": (0, 4, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -348,6 +348,26 @@ def _build_animation_group(settings, animation_type, phase_override=None):
 
 
 
+def _set_typed_socket_default(node, socket_name, socket_type, value):
+    """Set the active dynamic socket on nodes whose input names repeat across data types."""
+    node.update()
+    candidates = [
+        socket for socket in node.inputs
+        if socket.name == socket_name and socket.type == socket_type and socket.enabled
+    ]
+    if not candidates:
+        candidates = [
+            socket for socket in node.inputs
+            if socket.name == socket_name and socket.type == socket_type
+        ]
+    if not candidates:
+        details = [(socket.name, socket.type, socket.enabled) for socket in node.inputs]
+        raise RuntimeError(
+            f"Could not find {socket_name!r} socket of type {socket_type!r}; inputs={details}"
+        )
+    candidates[0].default_value = value
+
+
 def _build_field_scatter_group(settings):
     """Scatter a source collection on the active mesh, with animated Noise/Color Ramp point selection."""
     collection = settings.scatter_collection
@@ -471,8 +491,8 @@ def _build_field_scatter_group(settings):
     pick_index.data_type = "INT"
     pick_index.location = (340, -700)
     pick_index.label = "Random source object per point"
-    pick_index.inputs["Min"].default_value = 0
-    pick_index.inputs["Max"].default_value = max(0, len(source_objects)-1)
+    _set_typed_socket_default(pick_index, "Min", "INT", 0)
+    _set_typed_socket_default(pick_index, "Max", "INT", max(0, len(source_objects)-1))
     links.new(point_index.outputs["Index"], pick_index.inputs["ID"])
     links.new(group_in.outputs["Seed"], pick_index.inputs["Seed"])
 
@@ -480,8 +500,8 @@ def _build_field_scatter_group(settings):
     rotation.data_type = "FLOAT_VECTOR"
     rotation.location = (340, -930)
     rotation.label = "Random rotation"
-    rotation.inputs["Min"].default_value = (0.0, 0.0, 0.0)
-    rotation.inputs["Max"].default_value = (0.0, 0.0, math.tau)
+    _set_typed_socket_default(rotation, "Min", "VECTOR", (0.0, 0.0, 0.0))
+    _set_typed_socket_default(rotation, "Max", "VECTOR", (0.0, 0.0, math.tau))
     links.new(point_index.outputs["Index"], rotation.inputs["ID"])
     links.new(group_in.outputs["Seed"], rotation.inputs["Seed"])
 
