@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 7, 0),
+    "version": (0, 8, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -524,7 +524,7 @@ def _build_animation_group(settings, animation_type, phase_override=None):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.7.0"
+    tree["vinmotion_version"] = "0.8.0"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -717,7 +717,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.7.0"
+    tree["vinmotion_version"] = "0.8.0"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -882,6 +882,48 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     lattice_noise_scale: FloatProperty(name="Lattice Noise Scale", default=1.7, min=0.05, max=20.0, precision=2)
     lattice_wave_frequency: FloatProperty(name="Lattice Wave Frequency", default=3.5, min=0.1, max=30.0, precision=2)
     lattice_mask_threshold: FloatProperty(name="Lattice Mask Threshold", default=0.28, min=0.0, max=1.0, precision=2)
+
+    object_motion_type: EnumProperty(
+        name="Object Motion",
+        items=[
+            ("WOBBLE", "Wobble / Tumble", "Uneven three-axis tipping and rotation"),
+            ("SHOCKWAVE", "Shockwave Reaction", "Objects kick outward and settle back in a distance-based wave"),
+            ("ORBIT", "Orbit / Revolve", "Objects follow separate circular orbits around a shared center"),
+            ("MAGNET", "Magnet Pull / Repel", "Selected objects are pulled toward or pushed away from the center"),
+            ("GLITCH", "Glitch / Teleport", "Discrete randomized position and rotation jumps"),
+            ("FOLD", "Fold / Unfold", "Selected parts fold down and open back up around their own origins"),
+            ("DISSOLVE", "Dissolve / Assemble", "Parts scatter and shrink, then assemble back to their original transforms"),
+            ("CASCADE", "Wave Cascade", "A traveling wave lifts objects in sequence across a selected axis"),
+        ],
+        default="WOBBLE",
+    )
+    object_motion_speed: FloatProperty(name="Speed", default=1.0, min=0.1, max=5.0, precision=2)
+    object_motion_amount: FloatProperty(name="Motion Amount", default=0.8, min=0.01, max=20.0, precision=2)
+    object_motion_duration: IntProperty(name="Cycle Frames", default=120, min=12, max=2000)
+    object_motion_stagger: IntProperty(name="Wave Stagger", default=36, min=0, max=1000)
+    object_motion_seed: IntProperty(name="Motion Seed", default=42, min=0, max=9999999)
+    object_motion_anchor: PointerProperty(
+        name="Center / Anchor",
+        description="Optional center object; if empty, the selected objects' average position is used",
+        type=bpy.types.Object,
+    )
+    object_motion_axis: EnumProperty(
+        name="Axis",
+        items=[
+            ("X", "X Axis", "Use the X axis for orbit plane or wave travel"),
+            ("Y", "Y Axis", "Use the Y axis for orbit plane or wave travel"),
+            ("Z", "Z Axis", "Use the Z axis for orbit plane or wave travel"),
+        ],
+        default="Z",
+    )
+    object_magnet_mode: EnumProperty(
+        name="Magnet Mode",
+        items=[
+            ("PULL", "Pull", "Pull inward toward the selected center"),
+            ("REPEL", "Repel", "Push outward away from the selected center"),
+        ],
+        default="PULL",
+    )
 
     scatter_collection: PointerProperty(
         name="Source Collection",
@@ -1353,6 +1395,368 @@ class VINMOTION_PT_animation(bpy.types.Panel):
         row.operator("vinmotion.reset_motion", text="Reset", icon="FILE_REFRESH")
 
 
+
+
+OBJECT_MOTION_LABELS = {
+    "WOBBLE": "Wobble / Tumble",
+    "SHOCKWAVE": "Shockwave Reaction",
+    "ORBIT": "Orbit / Revolve",
+    "MAGNET": "Magnet Pull / Repel",
+    "GLITCH": "Glitch / Teleport",
+    "FOLD": "Fold / Unfold",
+    "DISSOLVE": "Dissolve / Assemble",
+    "CASCADE": "Wave Cascade",
+}
+
+
+def _motion_axis_vector(axis):
+    return {
+        "X": Vector((1.0, 0.0, 0.0)),
+        "Y": Vector((0.0, 1.0, 0.0)),
+        "Z": Vector((0.0, 0.0, 1.0)),
+    }[axis]
+
+
+def _object_motion_targets(context, settings):
+    supported = {"MESH", "CURVE", "FONT", "SURFACE"}
+    targets = [
+        obj for obj in context.selected_objects
+        if obj.type in supported and obj != settings.object_motion_anchor
+    ]
+    if any(obj.parent is not None for obj in targets):
+        raise ValueError("Object Motion Actions need unparented objects so their transform keys move predictably")
+    return targets
+
+
+def _object_motion_center(context, targets, settings):
+    if settings.object_motion_anchor is not None:
+        return settings.object_motion_anchor.matrix_world.translation.copy()
+    if targets:
+        center = Vector((0.0, 0.0, 0.0))
+        for obj in targets:
+            center += obj.matrix_world.translation
+        return center / len(targets)
+    return context.scene.cursor.location.copy()
+
+
+def _prepare_object_motion_action(obj):
+    """Keep non-transform animation channels; clear only old transform keys used by this tool."""
+    obj.animation_data_create()
+    action = obj.animation_data.action
+    if action is not None and action.users > 1:
+        action = action.copy()
+        action.name = action.name + " · " + obj.name
+        obj.animation_data.action = action
+    if action is None:
+        action = bpy.data.actions.new(name=f"VIN Motion · {obj.name}")
+        obj.animation_data.action = action
+    for curve in list(action.fcurves):
+        if curve.data_path in {"location", "rotation_euler", "rotation_quaternion", "scale"}:
+            action.fcurves.remove(curve)
+    obj.rotation_mode = "XYZ"
+    return action
+
+
+def _set_object_transform(obj, location, rotation, scale):
+    obj.location = location
+    obj.rotation_euler = rotation
+    obj.scale = scale
+
+
+def _insert_object_motion_key(obj, frame, location, rotation, scale, channels):
+    _set_object_transform(obj, location, rotation, scale)
+    for channel in channels:
+        obj.keyframe_insert(data_path=channel, frame=int(frame), group="VIN Object Motion")
+
+
+def _finish_object_motion_action(obj, interpolation="BEZIER", loop=True):
+    action = obj.animation_data.action if obj.animation_data else None
+    if action is None:
+        return
+    for curve in action.fcurves:
+        if curve.data_path not in {"location", "rotation_euler", "rotation_quaternion", "scale"}:
+            continue
+        for key in curve.keyframe_points:
+            key.interpolation = interpolation
+            if interpolation == "BEZIER":
+                key.handle_left_type = "AUTO"
+                key.handle_right_type = "AUTO"
+        if loop:
+            cycles = curve.modifiers.new(type="CYCLES")
+            cycles.mode_before = "REPEAT"
+            cycles.mode_after = "REPEAT"
+
+
+def _object_motion_key_path(obj, start_frame, duration, mode, amount, rng, center, axis, settings, index, distance_ratio):
+    """Insert distinct transform curves for one selected object. Returns path metadata."""
+    base_location = obj.location.copy()
+    base_rotation = obj.rotation_euler.copy()
+    base_scale = obj.scale.copy()
+    frame_start = int(start_frame)
+    frame_duration = max(12, int(round(duration / max(0.1, settings.object_motion_speed))))
+    motion_amount = float(amount)
+    axis_vector = _motion_axis_vector(axis)
+    phase = rng.uniform(-math.pi, math.pi)
+    channels = {"location", "rotation_euler", "scale"}
+    loop = True
+    interpolation = "BEZIER"
+    start_delay = 0
+
+    if mode == "SHOCKWAVE":
+        # A one-shot pulse: later objects react later based on distance from the center.
+        start_delay = int(round(settings.object_motion_stagger * distance_ratio))
+        frame_start += start_delay
+        direction = base_location - center
+        if direction.length < 1e-5:
+            direction = Vector((rng.uniform(-1,1), rng.uniform(-1,1), rng.uniform(-1,1)))
+        if direction.length < 1e-5:
+            direction = Vector((0.0, 0.0, 1.0))
+        direction.normalize()
+        frames = [
+            (0.00, 0.0), (0.12, 0.0), (0.30, 1.0),
+            (0.42, 0.45), (0.62, 0.16), (0.82, 0.0), (1.00, 0.0)
+        ]
+        for t, factor in frames:
+            loc = base_location + direction * motion_amount * factor
+            rot = base_rotation.copy()
+            rot += Vector((rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12))) * factor
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, rot, base_scale, channels)
+        loop = False
+
+    elif mode == "WOBBLE":
+        amplitude = min(motion_amount, math.pi * 0.85)
+        for sample in range(17):
+            t = sample / 16.0
+            angle = math.tau * t
+            rot = base_rotation + Vector((
+                amplitude * math.sin(angle + phase),
+                amplitude * 0.68 * math.sin(2.0 * angle + phase * 0.73),
+                amplitude * 0.42 * math.sin(3.0 * angle + phase * 1.17),
+            ))
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, base_location, rot, base_scale, channels)
+
+    elif mode == "ORBIT":
+        axis_index = {"X": 0, "Y": 1, "Z": 2}[axis]
+        plane_axes = [i for i in range(3) if i != axis_index]
+        radial = base_location - center
+        radius = math.hypot(radial[plane_axes[0]], radial[plane_axes[1]])
+        if radius < 1e-5:
+            radius = max(0.25, motion_amount)
+            radial[plane_axes[0]] = radius
+            radial[plane_axes[1]] = 0.0
+        base_angle = math.atan2(radial[plane_axes[1]], radial[plane_axes[0]])
+        height = base_location[axis_index] - center[axis_index]
+        for sample in range(17):
+            t = sample / 16.0
+            angle = base_angle + math.tau * t
+            loc = center.copy()
+            loc[plane_axes[0]] += radius * math.cos(angle)
+            loc[plane_axes[1]] += radius * math.sin(angle)
+            loc[axis_index] += height + motion_amount * 0.18 * math.sin(2.0 * angle + phase)
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, base_rotation, base_scale, channels)
+
+    elif mode == "MAGNET":
+        direction = base_location - center
+        distance = direction.length
+        if distance < 1e-5:
+            direction = Vector((rng.uniform(-1,1), rng.uniform(-1,1), rng.uniform(-1,1)))
+            if direction.length < 1e-5:
+                direction = Vector((1.0, 0.0, 0.0))
+            direction.normalize()
+            distance = 0.0
+        else:
+            direction.normalize()
+        if settings.object_magnet_mode == "PULL":
+            displacement = -direction * min(motion_amount, max(0.0, distance * 0.78))
+        else:
+            displacement = direction * motion_amount
+        frames = [(0.0, 0.0), (0.22, 0.72), (0.38, 1.0), (0.58, 0.55), (0.78, 0.12), (1.0, 0.0)]
+        for t, factor in frames:
+            loc = base_location + displacement * factor
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, base_rotation, base_scale, channels)
+
+    elif mode == "GLITCH":
+        interpolation = "CONSTANT"
+        for sample in range(13):
+            t = sample / 12.0
+            if sample in {0, 12}:
+                loc, rot, scale = base_location.copy(), base_rotation.copy(), base_scale.copy()
+            else:
+                loc = base_location + Vector((
+                    rng.uniform(-motion_amount, motion_amount),
+                    rng.uniform(-motion_amount, motion_amount),
+                    rng.uniform(-motion_amount, motion_amount),
+                ))
+                rot = base_rotation + Vector((
+                    rng.uniform(-0.45, 0.45),
+                    rng.uniform(-0.45, 0.45),
+                    rng.uniform(-0.8, 0.8),
+                )) * min(1.0, motion_amount)
+                scale = base_scale * rng.uniform(0.82, 1.18)
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, rot, scale, channels)
+
+    elif mode == "FOLD":
+        interpolation = "BEZIER"
+        folded_scale = Vector((
+            max(0.035, base_scale.x * 0.12),
+            max(0.035, base_scale.y * 0.12),
+            max(0.035, base_scale.z * 0.12),
+        ))
+        fold_angle = min(motion_amount, math.pi * 0.85)
+        tilt = Vector((
+            rng.choice((-1.0, 1.0)) * fold_angle,
+            rng.choice((-1.0, 1.0)) * fold_angle * rng.uniform(0.3, 0.75),
+            rng.choice((-1.0, 1.0)) * fold_angle * rng.uniform(0.2, 0.65),
+        ))
+        frames = [
+            (0.0, 0.0, 1.0), (0.24, 1.0, 0.12),
+            (0.50, 0.0, 1.0), (0.76, 1.0, 0.12), (1.0, 0.0, 1.0)
+        ]
+        for t, folded, scale_factor in frames:
+            rot = base_rotation + tilt * folded
+            scale = base_scale if scale_factor > 0.9 else folded_scale
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, base_location, rot, scale, channels)
+
+    elif mode == "DISSOLVE":
+        spread = Vector((rng.uniform(-1,1), rng.uniform(-1,1), rng.uniform(-1,1)))
+        if spread.length < 1e-5:
+            spread = Vector((1.0,0.0,0.0))
+        spread.normalize()
+        scatter_location = base_location + spread * motion_amount
+        tiny_scale = Vector((
+            max(0.001, base_scale.x * 0.001),
+            max(0.001, base_scale.y * 0.001),
+            max(0.001, base_scale.z * 0.001),
+        ))
+        half_scale = base_scale * 0.55
+        frames = [
+            (0.0, scatter_location, tiny_scale),
+            (0.18, scatter_location + spread * motion_amount * 0.25, tiny_scale),
+            (0.42, base_location, half_scale),
+            (0.50, base_location, base_scale),
+            (0.58, base_location, base_scale),
+            (0.82, scatter_location + spread * motion_amount * 0.25, tiny_scale),
+            (1.0, scatter_location, tiny_scale),
+        ]
+        for t, loc, scale in frames:
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, base_rotation, scale, channels)
+
+    elif mode == "CASCADE":
+        # Wave phase comes from each object's projection along the selected propagation axis.
+        projection = base_location[{"X":0, "Y":1, "Z":2}[axis]]
+        wave_phase = projection * 1.4 + phase
+        for sample in range(17):
+            t = sample / 16.0
+            wave = math.sin(math.tau * t - wave_phase)
+            loc = base_location + Vector((0.0, 0.0, motion_amount * wave))
+            rot = base_rotation + Vector((
+                0.06 * math.sin(math.tau*t-wave_phase),
+                0.08 * math.sin(math.tau*t-wave_phase+0.7),
+                0.10 * math.sin(math.tau*t-wave_phase+1.1),
+            )) * min(1.0, motion_amount)
+            _insert_object_motion_key(obj, frame_start + t * frame_duration, loc, rot, base_scale, channels)
+
+    else:
+        raise ValueError(f"Unsupported Object Motion Action: {mode}")
+
+    return {
+        "duration": frame_duration,
+        "start_frame": frame_start,
+        "start_delay": start_delay,
+        "interpolation": interpolation,
+        "loop": loop,
+    }
+
+
+class VINMOTION_OT_apply_object_motion(bpy.types.Operator):
+    bl_idname = "vinmotion.apply_object_motion"
+    bl_label = "Apply Object Motion"
+    bl_description = "Create independent transform keyframes for each selected object"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinmotion_settings
+        try:
+            targets = _object_motion_targets(context, settings)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        if not targets:
+            self.report({"ERROR"}, "Select one or more objects to animate")
+            return {"CANCELLED"}
+
+        center = _object_motion_center(context, targets, settings)
+        axis = settings.object_motion_axis
+        rng = random.Random(settings.object_motion_seed)
+        positions = [obj.matrix_world.translation.copy() for obj in targets]
+        distances = [(position-center).length for position in positions]
+        max_distance = max(distances) if distances else 0.0
+        duration = settings.object_motion_duration
+        start_frame = max(1, context.scene.frame_current)
+        built = 0
+        try:
+            for index, obj in enumerate(targets):
+                object_rng = random.Random(rng.randint(0, 2**31-1))
+                distance_ratio = distances[index] / max_distance if max_distance > 1e-6 else index / max(1, len(targets)-1)
+                _prepare_object_motion_action(obj)
+                meta = _object_motion_key_path(
+                    obj, start_frame, duration, settings.object_motion_type,
+                    settings.object_motion_amount, object_rng, center, axis,
+                    settings, index, distance_ratio,
+                )
+                _finish_object_motion_action(
+                    obj, interpolation=meta["interpolation"], loop=meta["loop"]
+                )
+                obj["vinmotion_object_motion"] = settings.object_motion_type
+                obj["vinmotion_object_motion_seed"] = settings.object_motion_seed + index
+                obj["vinmotion_object_motion_duration"] = meta["duration"]
+                obj["vinmotion_object_motion_start"] = meta["start_frame"]
+                obj["vinmotion_object_motion_center"] = tuple(center)
+                built += 1
+        except Exception as exc:
+            self.report({"ERROR"}, f"Object motion stopped after {built}/{len(targets)} objects: {exc}")
+            return {"CANCELLED"}
+
+        self.report({"INFO"}, f"Applied {OBJECT_MOTION_LABELS[settings.object_motion_type]} to {built} separate object(s)")
+        return {"FINISHED"}
+
+
+class VINMOTION_PT_actions(bpy.types.Panel):
+    bl_label = "Object Motion Actions"
+    bl_idname = "VINMOTION_PT_actions"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Actions"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinmotion_settings
+        box = layout.box()
+        box.label(text="Real Object Transform Motion", icon="ACTION")
+        box.label(text="Creates separate transform keyframes; Geometry Nodes stays intact.")
+        box.prop(settings, "object_motion_type")
+        box.prop(settings, "object_motion_speed")
+        box.prop(settings, "object_motion_amount")
+        box.prop(settings, "object_motion_duration")
+        box.prop(settings, "object_motion_stagger")
+        box.prop(settings, "object_motion_seed")
+        box.prop(settings, "object_motion_anchor")
+        box.prop(settings, "object_motion_axis")
+        if settings.object_motion_type == "MAGNET":
+            box.prop(settings, "object_magnet_mode")
+        if settings.object_motion_type == "SHOCKWAVE":
+            box.label(text="One-shot reaction, delayed by distance from center.")
+        elif settings.object_motion_type == "FOLD":
+            box.label(text="Best with separated panels/components.")
+        elif settings.object_motion_type == "DISSOLVE":
+            box.label(text="Uses object scale and position to assemble/dissolve.")
+        elif settings.object_motion_type == "CASCADE":
+            box.label(text="Objects lift on Z; wave travel uses the selected Axis.")
+        row = box.row(align=True)
+        row.operator("vinmotion.apply_object_motion", text="Apply to Selected", icon="ACTION")
+        layout.separator()
+
+
 class VINMOTION_PT_scatter(bpy.types.Panel):
     bl_label = "Noise / Color Ramp Scatter"
     bl_idname = "VINMOTION_PT_scatter"
@@ -1441,10 +1845,12 @@ CLASSES = (
     VINMOTION_Settings,
     VINMOTION_OT_build_animation,
     VINMOTION_OT_reset_motion,
+    VINMOTION_OT_apply_object_motion,
     VINMOTION_OT_surface_spawn,
     VINMOTION_OT_surface_crawl,
     VINMOTION_OT_build_scatter,
     VINMOTION_PT_animation,
+    VINMOTION_PT_actions,
     VINMOTION_PT_scatter,
     VINMOTION_PT_spawn,
     VINMOTION_PT_crawl,
