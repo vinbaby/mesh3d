@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.2.0
+# VIN Motion Lab — Standalone Blender Add-on v0.3.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -15,6 +15,19 @@ Select any mesh or curve object, choose one mode, and click Build Animation Node
 For Living Entity, a mesh with enough geometry gives the best result. Surface Detail increases subdivision before deformation; start at 2, then try 3 for smoother motion. Very low-poly meshes otherwise cannot deform into soft shapes. The Color Ramp inside the Geometry Nodes graph can be edited to change which regions move.
 
 The generated Geometry Nodes group is editable. Play the timeline to preview Scene Time-driven motion.
+
+### Surface Spawn / Individual Motion
+
+This is separate from the quick Geometry Nodes instance scatter. It creates real, separately selectable object copies on the active mesh surface.
+
+1. Put the source meshes in a dedicated collection. Each source should already be a separate object, not a single joined mesh containing disconnected pieces.
+2. Select the target Plane/surface, choose the collection in **Spawn Source Collection**, then click **Spawn Separate Objects**.
+3. The new objects appear in a collection named **VIN Motion · Surface Spawn**. Each spawned copy gets its own mesh datablock, animation modifier, Geometry Nodes group, random phase, speed and amount, plus staggered growth keyframes.
+4. Choose **Random per Object** for mixed motion types or **Use Selected Motion** to use the current Animation preset for each copy.
+
+Controls: Spawn Count, Seed, Min/Max Scale, Align to Surface, Speed/Amount Variation, Phase Spread, First Spawn Frame, Spawn Stagger and Growth Frames. To control one item, select it in the Outliner and adjust its **VIN Motion · Animation** modifier inputs, or edit its dedicated node group. Rerunning creates a new output collection rather than joining objects together.
+
+The quick Scatter tool below remains available for lighter-weight instance-based layouts when individual object control is not needed.
 
 ### Noise / Color Ramp Scatter
 1. Keep the objects you want to scatter in a dedicated Blender Collection. Use the original generated source parts; they remain separate objects.
@@ -34,4 +47,4 @@ Note: scatter output uses Geometry Nodes instances, not separate scene objects. 
 Leave VIN Procedural Lab installed if you still use its shape generator. The two add-ons use different panel tabs, scene settings, operators, and modifier names.
 
 ## Compatibility
-Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, plus the scatter graph.
+Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, the instance-based scatter graph, and Surface Spawn's separate objects, unique per-object node groups and growth keyframes.
