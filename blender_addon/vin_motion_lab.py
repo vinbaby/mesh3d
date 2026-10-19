@@ -673,6 +673,144 @@ class VINMOTION_OT_build_animation(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class VINMOTION_OT_surface_spawn(bpy.types.Operator):
+    bl_idname = "vinmotion.surface_spawn"
+    bl_label = "Spawn Separate Objects"
+    bl_description = "Create individually selectable copies across the active surface with independent motion and growth"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        plane = context.object
+        settings = context.scene.vinmotion_settings
+        source_collection = settings.spawn_source_collection
+        if plane is None or plane.type != "MESH":
+            self.report({"ERROR"}, "Select a target Plane or mesh surface first")
+            return {"CANCELLED"}
+        if source_collection is None:
+            self.report({"ERROR"}, "Choose a Spawn Source Collection")
+            return {"CANCELLED"}
+        if plane.name in {item.name for item in source_collection.objects}:
+            self.report({"ERROR"}, "Keep the target surface outside the Spawn Source Collection")
+            return {"CANCELLED"}
+        sources = [
+            item for item in source_collection.objects
+            if item.type in {"MESH", "CURVE", "FONT", "SURFACE"} and item.data is not None
+        ]
+        if not sources:
+            self.report({"ERROR"}, "The Spawn Source Collection has no mesh or curve objects")
+            return {"CANCELLED"}
+        triangles, total_area = _surface_triangles(plane, context.evaluated_depsgraph_get())
+        if not triangles or total_area <= 1e-10:
+            self.report({"ERROR"}, "The target surface has no non-zero-area faces")
+            return {"CANCELLED"}
+
+        rng = random.Random(settings.spawn_seed)
+        safe_min = max(0.01, min(settings.spawn_min_scale, settings.spawn_max_scale))
+        safe_max = max(safe_min, settings.spawn_max_scale)
+        result_collection = bpy.data.collections.new("VIN Motion · Surface Spawn")
+        context.scene.collection.children.link(result_collection)
+        animation_types = ("BOB", "SPIN", "PULSE", "TWIST", "LIVING")
+        spawned = []
+        failure = None
+        try:
+            for index in range(settings.spawn_count):
+                source = rng.choice(sources)
+                point, normal = _sample_surface_triangle(triangles, total_area, rng)
+                spawn_obj = source.copy()
+                spawn_obj.data = source.data.copy()
+                spawn_obj.animation_data_clear()
+                spawn_obj.parent = None
+                for old_collection in list(spawn_obj.users_collection):
+                    old_collection.objects.unlink(spawn_obj)
+                result_collection.objects.link(spawn_obj)
+                spawned.append(spawn_obj)
+
+                _source_location, source_rotation, source_scale = source.matrix_world.decompose()
+                scale_factor = rng.uniform(safe_min, safe_max)
+                final_scale = tuple(abs(value) * scale_factor for value in source_scale)
+                if settings.spawn_align_normal:
+                    align_rotation = normal.to_track_quat("Z", "Y")
+                    twist = Quaternion(normal, rng.uniform(0.0, math.tau))
+                    spawn_obj.rotation_mode = "QUATERNION"
+                    spawn_obj.rotation_quaternion = twist @ align_rotation @ source_rotation
+                else:
+                    spawn_obj.rotation_mode = "QUATERNION"
+                    spawn_obj.rotation_quaternion = source_rotation
+                spawn_obj.location = point + normal * settings.spawn_surface_offset
+                spawn_obj.scale = final_scale
+                spawn_obj.name = f"VIN Spawn · {source.name} · {index + 1:03d}"
+                if spawn_obj.data is not None:
+                    spawn_obj.data.name = spawn_obj.name + " Mesh"
+
+                animation_type = (
+                    rng.choice(animation_types)
+                    if settings.spawn_animation_mode == "RANDOM"
+                    else settings.animation_type
+                )
+                tree, speed_socket, amount_socket, extra_sockets, phase_socket = _build_animation_group(settings, animation_type)
+                modifier = spawn_obj.modifiers.get("VIN Motion · Animation")
+                if modifier is None or modifier.type != "NODES":
+                    modifier = spawn_obj.modifiers.new(name="VIN Motion · Animation", type="NODES")
+                modifier.node_group = tree
+
+                speed_identifier = getattr(speed_socket, "identifier", None)
+                amount_identifier = getattr(amount_socket, "identifier", None)
+                phase_identifier = getattr(phase_socket, "identifier", None)
+                speed_variance = rng.uniform(1.0-settings.spawn_speed_variance, 1.0+settings.spawn_speed_variance)
+                amount_variance = rng.uniform(1.0-settings.spawn_amount_variance, 1.0+settings.spawn_amount_variance)
+                speed_value = max(0.0, min(20.0, settings.animation_speed * speed_variance))
+                amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type == "LIVING" else 10.0)
+                amount_value = max(0.0, min(amount_limit, settings.animation_amount * amount_variance))
+                phase_value = rng.uniform(-settings.spawn_phase_range, settings.spawn_phase_range)
+                if speed_identifier:
+                    modifier[speed_identifier] = speed_value
+                if amount_identifier:
+                    modifier[amount_identifier] = amount_value
+                if phase_identifier:
+                    modifier[phase_identifier] = phase_value
+                extra_values = {
+                    "noise_scale": settings.entity_noise_scale,
+                    "breathing": settings.entity_breathing,
+                    "threshold": settings.entity_mask_threshold,
+                    "subdivision": settings.entity_subdivision,
+                }
+                for key, socket in extra_sockets.items():
+                    identifier = getattr(socket, "identifier", None)
+                    if identifier:
+                        modifier[identifier] = extra_values[key]
+
+                start_frame = settings.spawn_start_frame
+                if settings.spawn_stagger_frames:
+                    start_frame += rng.randint(0, settings.spawn_stagger_frames)
+                _insert_growth_keys(spawn_obj, final_scale, start_frame, settings.spawn_growth_frames, rng)
+                spawn_obj["vinmotion_spawn_index"] = index + 1
+                spawn_obj["vinmotion_animation_type"] = animation_type
+                spawn_obj["vinmotion_speed"] = speed_value
+                spawn_obj["vinmotion_phase"] = phase_value
+                spawn_obj["vinmotion_source_object"] = source.name
+                spawn_obj["vinmotion_spawn_collection"] = result_collection.name
+        except Exception as exc:
+            failure = exc
+
+        if failure is not None:
+            for item in spawned:
+                if item.name in bpy.data.objects:
+                    bpy.data.objects.remove(item, do_unlink=True)
+            if result_collection.name in bpy.data.collections:
+                bpy.data.collections.remove(result_collection)
+            self.report({"ERROR"}, f"Surface Spawn failed: {failure}")
+            return {"CANCELLED"}
+
+        bpy.ops.object.select_all(action="DESELECT")
+        for item in spawned:
+            item.select_set(True)
+        if spawned:
+            context.view_layer.objects.active = spawned[0]
+        context.scene.frame_set(context.scene.frame_current)
+        self.report({"INFO"}, f"Spawned {len(spawned)} separate objects; each has its own animation modifier")
+        return {"FINISHED"}
+
+
 class VINMOTION_OT_build_scatter(bpy.types.Operator):
     bl_idname = "vinmotion.build_scatter"
     bl_label = "Build Noise Scatter"
@@ -772,7 +910,29 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.prop(settings, "scatter_min_scale")
         row.prop(settings, "scatter_max_scale")
         box.prop(settings, "scatter_seed")
-        box.operator("vinmotion.build_scatter", text="Build Scatter Nodes", icon="NODETREE")
+        box.operator("vinmotion.build_scatter", text="Build Scatter Nodes (Instances)", icon="NODETREE")
+
+        box = layout.box()
+        box.label(text="3 · Surface Spawn / Individual Motion", icon="PARTICLES")
+        box.label(text="Creates separate objects, not shared instances")
+        box.prop(settings, "spawn_source_collection")
+        box.prop(settings, "spawn_count")
+        box.prop(settings, "spawn_seed")
+        box.prop(settings, "spawn_animation_mode")
+        box.prop(settings, "spawn_align_normal")
+        row = box.row(align=True)
+        row.prop(settings, "spawn_min_scale")
+        row.prop(settings, "spawn_max_scale")
+        row = box.row(align=True)
+        row.prop(settings, "spawn_speed_variance")
+        row.prop(settings, "spawn_amount_variance")
+        box.prop(settings, "spawn_phase_range")
+        box.prop(settings, "spawn_surface_offset")
+        row = box.row(align=True)
+        row.prop(settings, "spawn_start_frame")
+        row.prop(settings, "spawn_stagger_frames")
+        box.prop(settings, "spawn_growth_frames")
+        box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="OUTLINER_OB_GROUP_INSTANCE")
         layout.separator()
         layout.label(text="Standalone add-on — no effect on VIN Procedural Lab.")
 
@@ -780,6 +940,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
 CLASSES = (
     VINMOTION_Settings,
     VINMOTION_OT_build_animation,
+    VINMOTION_OT_surface_spawn,
     VINMOTION_OT_build_scatter,
     VINMOTION_PT_main,
 )
