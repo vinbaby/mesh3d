@@ -26,19 +26,29 @@ def _material_addon_source() -> str:
 def test_standalone_material_lab_has_independent_color_and_texture_nodes() -> None:
     source = _material_addon_source()
     assert '"name": "VIN Material Lab"' in source
-    assert '"version": (0, 1, 0)' in source
+    assert '"version": (0, 2, 0)' in source
     assert 'bl_category = "VIN Material"' in source
     assert "class VINMAT_OT_apply_selected" in source
     assert "class VINMAT_OT_create_material" in source
     assert "class VINMAT_PT_main" in source
+    for finish in (
+        "CLEAR_GLASS", "FROSTED_GLASS", "CLEAR_PLASTIC", "MATTE_PLASTIC",
+        "RUBBER", "FABRIC", "LEATHER", "WOOD", "STONE", "PAPER",
+    ):
+        assert finish in source
+    assert "FINISH_PHYSICS" in source
+    assert "def _apply_finish_physics" in source
     for palette in (
         "CYBER_AMBER", "MONO_GOLD", "NEON_PRISM",
         "TITANIUM_SUNSET", "PORCELAIN_CHAMPAGNE", "VOID_EMBER",
+        "EARTH_NATURAL", "SOFT_PASTEL", "OCEAN_COAST",
+        "FOREST_MOSS", "CANDY_POP", "CLAY_TERRACOTTA",
     ):
         assert palette in source
     for pattern in (
         "CLEAN", "BRUSHED", "NOISE_RAMP", "CARBON_FIBER",
-        "HEX_CELLS", "PITTED", "CIRCUIT_LINES",
+        "HEX_CELLS", "PITTED", "CIRCUIT_LINES", "FABRIC_WEAVE",
+        "WOOD_GRAIN", "SPECKLED_STONE", "MICRO_SCRATCHES", "WATER_DROPLETS",
     ):
         assert pattern in source
     for node_type in (
