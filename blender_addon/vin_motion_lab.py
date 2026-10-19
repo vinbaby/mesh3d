@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 3, 0),
+    "version": (0, 3, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -62,7 +62,7 @@ def _find_socket(sockets, name):
     return socket
 
 
-def _build_animation_group(settings, animation_type):
+def _build_animation_group(settings, animation_type, phase_override=None):
     friendly = ANIMATION_LABELS.get(animation_type, animation_type.title())
     tree = bpy.data.node_groups.new(
         name=f"VINMOTION · {friendly}", type="GeometryNodeTree"
@@ -89,7 +89,7 @@ def _build_animation_group(settings, animation_type):
     )
     phase_socket = _add_interface_socket(
         tree, "Phase", "INPUT", "NodeSocketFloat",
-        default=settings.animation_phase, min_value=-100.0, max_value=100.0,
+        default=settings.animation_phase if phase_override is None else phase_override, min_value=-100.0, max_value=100.0,
     )
     extra_sockets = {}
     if animation_type == "LIVING":
@@ -337,7 +337,7 @@ def _build_animation_group(settings, animation_type):
         bpy.data.node_groups.remove(tree)
         raise ValueError(f"Unsupported animation type: {animation_type}")
 
-    tree["vinmotion_version"] = "0.3.0"
+    tree["vinmotion_version"] = "0.3.1"
     tree["vinmotion_animation_type"] = animation_type
     tree["vinmotion_speed_socket"] = getattr(speed_socket, "identifier", "Speed")
     tree["vinmotion_amount_socket"] = getattr(amount_socket, "identifier", amount_label)
@@ -510,7 +510,7 @@ def _build_field_scatter_group(settings):
     links.new(uniform_scale.outputs["Vector"], instance.inputs["Scale"])
     links.new(instance.outputs["Instances"], group_out.inputs["Geometry"])
 
-    tree["vinmotion_version"] = "0.3.0"
+    tree["vinmotion_version"] = "0.3.1"
     tree["vinmotion_feature"] = "noise_color_ramp_scatter"
     tree["vinmotion_source_collection"] = collection.name
     return tree, sockets
@@ -580,6 +580,7 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     animation_speed: FloatProperty(name="Speed", default=1.0, min=0.0, max=20.0, precision=2)
     animation_amount: FloatProperty(name="Amount", description="Height, pulse intensity, twist strength, or living surface deformation", default=0.5, min=0.0, max=10.0, precision=2)
     animation_phase: FloatProperty(name="Phase", description="Offset the animation clock to desynchronize this object", default=0.0, min=-100.0, max=100.0, precision=2)
+    animation_phase_spread: FloatProperty(name="Selected Phase Spread", description="Spread motion phases across selected objects", default=6.283, min=0.0, max=50.0, precision=2)
     entity_noise_scale: FloatProperty(name="Organic Noise Scale", default=1.6, min=0.05, max=20.0, precision=2)
     entity_breathing: FloatProperty(name="Breathing", default=0.18, min=0.0, max=0.8, precision=2)
     entity_mask_threshold: FloatProperty(name="Mask Threshold", default=0.30, min=0.0, max=1.0, precision=2)
@@ -629,48 +630,91 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
 class VINMOTION_OT_build_animation(bpy.types.Operator):
     bl_idname = "vinmotion.build_animation"
     bl_label = "Build Animation Nodes"
-    bl_description = "Create an editable Geometry Nodes animation graph on the active object"
+    bl_description = "Apply an independent Geometry Nodes animation graph to every selected mesh or curve object"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        obj = context.object
-        if obj is None or obj.type not in {"MESH", "CURVE", "FONT", "SURFACE"}:
-            self.report({"ERROR"}, "Select a mesh or curve object first")
+        valid_types = {"MESH", "CURVE", "FONT", "SURFACE"}
+        targets = [obj for obj in context.selected_objects if obj.type in valid_types]
+        if not targets and context.object is not None and context.object.type in valid_types:
+            targets = [context.object]
+        if not targets:
+            self.report({"ERROR"}, "Select one or more mesh or curve objects first")
             return {"CANCELLED"}
+
         settings = context.scene.vinmotion_settings
+        total = len(targets)
+        built = 0
         try:
-            tree, speed_socket, amount_socket, extra_sockets, phase_socket = _build_animation_group(settings, settings.animation_type)
-            modifier = obj.modifiers.get("VIN Motion · Animation")
-            if modifier is None or modifier.type != "NODES":
-                modifier = obj.modifiers.new(name="VIN Motion · Animation", type="NODES")
-            modifier.node_group = tree
-            speed_id = getattr(speed_socket, "identifier", None)
-            amount_id = getattr(amount_socket, "identifier", None)
-            if speed_id:
-                modifier[speed_id] = settings.animation_speed
-            if amount_id:
-                amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type == "LIVING" else 10.0)
-                modifier[amount_id] = min(settings.animation_amount, amount_limit)
-            phase_id = getattr(phase_socket, "identifier", None)
-            if phase_id:
-                modifier[phase_id] = settings.animation_phase
-            extra_values = {
-                "noise_scale": settings.entity_noise_scale,
-                "breathing": settings.entity_breathing,
-                "threshold": settings.entity_mask_threshold,
-                "subdivision": settings.entity_subdivision,
-            }
-            for key, socket in extra_sockets.items():
-                identifier = getattr(socket, "identifier", None)
-                if identifier:
-                    modifier[identifier] = extra_values[key]
-            obj["vinmotion_animation_type"] = settings.animation_type
-            obj["vinmotion_animation_group"] = tree.name
+            for index, obj in enumerate(targets):
+                if total > 1:
+                    phase_offset = ((index / (total - 1)) - 0.5) * settings.animation_phase_spread
+                else:
+                    phase_offset = 0.0
+                phase_value = max(-100.0, min(100.0, settings.animation_phase + phase_offset))
+                tree, speed_socket, amount_socket, extra_sockets, phase_socket = _build_animation_group(
+                    settings, settings.animation_type, phase_override=phase_value
+                )
+                modifier = obj.modifiers.get("VIN Motion · Animation")
+                if modifier is None or modifier.type != "NODES":
+                    modifier = obj.modifiers.new(name="VIN Motion · Animation", type="NODES")
+                modifier.node_group = tree
+
+                speed_id = getattr(speed_socket, "identifier", None)
+                amount_id = getattr(amount_socket, "identifier", None)
+                phase_id = getattr(phase_socket, "identifier", None)
+                if speed_id:
+                    modifier[speed_id] = settings.animation_speed
+                if amount_id:
+                    amount_limit = 0.95 if settings.animation_type == "PULSE" else (2.0 if settings.animation_type == "LIVING" else 10.0)
+                    modifier[amount_id] = min(settings.animation_amount, amount_limit)
+                if phase_id:
+                    modifier[phase_id] = phase_value
+
+                extra_values = {
+                    "noise_scale": settings.entity_noise_scale,
+                    "breathing": settings.entity_breathing,
+                    "threshold": settings.entity_mask_threshold,
+                    "subdivision": settings.entity_subdivision,
+                }
+                for key, socket in extra_sockets.items():
+                    identifier = getattr(socket, "identifier", None)
+                    if identifier:
+                        modifier[identifier] = extra_values[key]
+
+                obj["vinmotion_animation_type"] = settings.animation_type
+                obj["vinmotion_animation_group"] = tree.name
+                obj["vinmotion_phase"] = phase_value
+                built += 1
             context.view_layer.update()
         except Exception as exc:
-            self.report({"ERROR"}, f"Animation node creation failed: {exc}")
+            self.report({"ERROR"}, f"Animation node creation stopped after {built}/{total} objects: {exc}")
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Built {ANIMATION_LABELS[settings.animation_type]} nodes on {obj.name}")
+        self.report({"INFO"}, f"Built {ANIMATION_LABELS[settings.animation_type]} on {built} separate object(s)")
+        return {"FINISHED"}
+
+
+class VINMOTION_OT_reset_motion(bpy.types.Operator):
+    bl_idname = "vinmotion.reset_motion"
+    bl_label = "Reset Motion Defaults"
+    bl_description = "Restore visible starter settings for an obvious animation preview"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinmotion_settings
+        settings.animation_type = "LIVING"
+        settings.animation_speed = 1.0
+        settings.animation_phase = 0.0
+        settings.animation_phase_spread = 6.283
+        settings.animation_amount = 0.35
+        settings.entity_noise_scale = 1.6
+        settings.entity_breathing = 0.18
+        settings.entity_mask_threshold = 0.30
+        settings.entity_subdivision = 2
+        settings.spawn_speed_variance = 0.35
+        settings.spawn_amount_variance = 0.25
+        settings.spawn_phase_range = 6.283
+        self.report({"INFO"}, "Motion defaults restored. Select objects and click Build Animation Nodes.")
         return {"FINISHED"}
 
 
@@ -879,6 +923,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
         box.prop(settings, "animation_type")
         box.prop(settings, "animation_speed")
         box.prop(settings, "animation_phase")
+        box.prop(settings, "animation_phase_spread")
         if settings.animation_type == "BOB":
             amount_label = "Height"
         elif settings.animation_type == "PULSE":
@@ -896,7 +941,10 @@ class VINMOTION_PT_main(bpy.types.Panel):
             box.prop(settings, "entity_mask_threshold")
             box.prop(settings, "entity_subdivision")
             box.label(text="Needs mesh vertices to deform; higher Detail adds resolution.")
-        box.operator("vinmotion.build_animation", text="Build Animation Nodes", icon="ACTION")
+        box.label(text="Applies to all selected objects; each gets its own graph.")
+        row = box.row(align=True)
+        row.operator("vinmotion.build_animation", text="Build on Selected", icon="ACTION")
+        row.operator("vinmotion.reset_motion", text="Reset", icon="FILE_REFRESH")
 
         box = layout.box()
         box.label(text="2 · Noise / Color Ramp Scatter", icon="FORCE_NOISE")
@@ -941,6 +989,7 @@ class VINMOTION_PT_main(bpy.types.Panel):
 CLASSES = (
     VINMOTION_Settings,
     VINMOTION_OT_build_animation,
+    VINMOTION_OT_reset_motion,
     VINMOTION_OT_surface_spawn,
     VINMOTION_OT_build_scatter,
     VINMOTION_PT_main,
