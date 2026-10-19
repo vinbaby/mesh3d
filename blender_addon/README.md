@@ -1,11 +1,20 @@
-# VIN Procedural Lab — Blender Add-on v0.7.2
+# VIN Procedural Lab — Blender Add-on v0.8.0
 
 A separate Blender add-on. It does not replace VIN 3D Studio and does not require an AI API.
 
 ## 1. Random Object / Procedural Shape Generator
 Generates one editable procedural artifact at a time. Random Object chooses a family by Seed; New Variant increments the seed and generates another form. **Auto Separate Components** is enabled by default: disconnected islands created inside the generated mesh are split into individual selectable Blender objects and each part gets an origin centered on its own bounds. The Separate Existing Mesh button can split an older combined object.
 
-Shape families include Twisted Column, Orbital Cage, Organic Blob, Crystal Cluster, Branching Form, Future Sculpture, Cyber Module, Folded Ribbon, Prism Reactor, Faceted Totem, Hex Armor, Circuit Core, Orbital Particle, Cellular Void and Spike Bloom.
+Shape families include Twisted Column, Orbital Cage, Organic Blob, Crystal Cluster, Branching Form, Future Sculpture, Cyber Module, Folded Ribbon, Prism Reactor, Faceted Totem, Hex Armor, Circuit Core, Orbital Particle, Cellular Void, Spike Bloom and Alien Lattice.
+
+### Alien Lattice — 3 editable layers
+
+Choose **Alien Lattice** and click **Generate Object**. It creates a seeded organic C-loop with three selectable objects:
+- **Shell** — broken porcelain-like surface patches with an adjustable-looking procedural distribution of holes and shell thickness.
+- **Triangular Frame** — dark space-frame struts, circumferential supports and alternating diagonal braces.
+- **Metal Beads** — randomized metallic bead clusters concentrated around several seed-selected hotspots.
+
+The generator intentionally keeps three organized layers instead of auto-separating every strut and pearl into hundreds of tiny Outliner objects. Select all three layers and use VIN Motion Lab's **Lattice Pulse** or apply different motion presets to each layer. New Seed values alter the loop shape, shell gaps, lattice omissions/brace directions and bead clusters.
 
 ## 2. Noise / Color Ramp Scatter
 1. Generate your artifact(s) with Auto Separate Components enabled.
