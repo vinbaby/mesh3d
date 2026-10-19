@@ -222,6 +222,58 @@ def main() -> None:
     if len(assigned_types) < 2:
         raise AssertionError("Random-per-object mode did not vary the assigned motion presets")
     print(f"[OK] Surface Spawn: {len(spawned)} separate animated objects, {len(node_group_ids)} unique node groups, types={sorted(assigned_types)}")
+
+    # Surface Crawl: each target gets its own loop of projected location keys on a target mesh.
+    crawl_surface_mesh = bpy.data.meshes.new("VIN Motion Crawl Surface Mesh")
+    crawl_surface_mesh.from_pydata([(-5,-5,0),(5,-5,0),(5,5,0),(-5,5,0)], [], [(0,1,2,3)])
+    crawl_surface_mesh.update()
+    crawl_surface = bpy.data.objects.new("VIN Motion Crawl Surface", crawl_surface_mesh)
+    bpy.context.scene.collection.objects.link(crawl_surface)
+
+    crawl_targets = []
+    for index, location in enumerate(((0.0,0.0,0.3),(1.0,1.0,0.3),(-1.0,0.5,0.3))):
+        crawl_mesh = bpy.data.meshes.new(f"VIN Motion Crawler Mesh {index}")
+        crawl_mesh.from_pydata(
+            [(-0.2,-0.2,0),(0.2,-0.2,0),(0.2,0.2,0),(-0.2,0.2,0)],
+            [], [(0,1,2,3)]
+        )
+        crawl_mesh.update()
+        crawler = bpy.data.objects.new(f"VIN Motion Crawler {index}", crawl_mesh)
+        crawler.location = location
+        bpy.context.scene.collection.objects.link(crawler)
+        crawl_targets.append(crawler)
+
+    settings.crawl_surface = crawl_surface
+    settings.crawl_seed = 93
+    settings.crawl_steps = 4
+    settings.crawl_step_frames = 6
+    settings.crawl_step_distance = 0.35
+    settings.crawl_surface_offset = 0.025
+    settings.crawl_stagger_frames = 12
+    settings.crawl_start_frame = 1
+    settings.crawl_align_normal = False
+    for obj in bpy.context.selected_objects:
+        obj.select_set(False)
+    for obj in crawl_targets:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = crawl_targets[0]
+    crawl_result = bpy.ops.vinmotion.surface_crawl()
+    if "FINISHED" not in crawl_result:
+        raise AssertionError(f"Surface Crawl failed: {crawl_result}")
+    for crawler in crawl_targets:
+        action = crawler.animation_data.action if crawler.animation_data else None
+        if action is None:
+            raise AssertionError(f"{crawler.name} has no location animation")
+        location_curves = [fc for fc in action.fcurves if fc.data_path == "location"]
+        if len(location_curves) != 3:
+            raise AssertionError(f"{crawler.name} does not have 3 location curves")
+        if any(len(fc.keyframe_points) < settings.crawl_steps + 2 for fc in location_curves):
+            raise AssertionError(f"{crawler.name} path has too few keys")
+        if not all(any(mod.type == "CYCLES" for mod in fc.modifiers) for fc in location_curves):
+            raise AssertionError(f"{crawler.name} path does not loop")
+        if not crawler.get("vinmotion_surface_crawl", False):
+            raise AssertionError(f"{crawler.name} is missing Surface Crawl metadata")
+    print(f"[OK] Surface Crawl: {len(crawl_targets)} independent looping paths with location keyframes")
     print("VIN Motion Lab runtime smoke test passed.")
 
 
