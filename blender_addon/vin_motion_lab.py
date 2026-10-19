@@ -1037,7 +1037,7 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
                 speed_variance = rng.uniform(1.0-settings.spawn_speed_variance, 1.0+settings.spawn_speed_variance)
                 amount_variance = rng.uniform(1.0-settings.spawn_amount_variance, 1.0+settings.spawn_amount_variance)
                 speed_value = max(0.0, min(20.0, settings.animation_speed * speed_variance))
-                amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type == "LIVING" else 10.0)
+                amount_limit = 0.95 if animation_type == "PULSE" else (2.0 if animation_type in {"LIVING", "RADIAL"} else 10.0)
                 amount_value = max(0.0, min(amount_limit, settings.animation_amount * amount_variance))
                 phase_value = rng.uniform(-settings.spawn_phase_range, settings.spawn_phase_range)
                 if speed_identifier:
