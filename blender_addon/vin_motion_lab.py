@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 3, 2),
+    "version": (0, 4, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -12,6 +12,7 @@ import bpy
 import math
 import random
 from mathutils import Vector, Quaternion
+from mathutils.bvhtree import BVHTree
 from bpy.props import (
     BoolProperty,
     EnumProperty,
@@ -575,6 +576,91 @@ def _insert_growth_keys(obj, final_scale, start_frame, growth_frames, rng):
                 key.handle_right_type = "AUTO_CLAMPED"
 
 
+def _build_surface_bvh(surface, depsgraph):
+    """Build a world-space acceleration tree for projecting crawl paths onto a mesh surface."""
+    evaluated = surface.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    try:
+        mesh.calc_loop_triangles()
+        world_vertices = [evaluated.matrix_world @ vertex.co for vertex in mesh.vertices]
+        triangles = [tuple(tri.vertices) for tri in mesh.loop_triangles]
+        if not world_vertices or not triangles:
+            raise ValueError("Crawl Surface has no faces")
+        tree = BVHTree.FromPolygons(world_vertices, triangles, all_triangles=True)
+        if tree is None:
+            raise ValueError("Could not build a surface acceleration tree")
+        return tree
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def _nearest_surface_point(tree, point):
+    result = tree.find_nearest(point)
+    if result is None or result[0] is None or result[1] is None:
+        raise ValueError("Could not project a crawl point onto the surface")
+    return result[0].copy(), result[1].normalized()
+
+
+def _projected_random_walk(tree, start, rng, step_distance, steps, surface_offset):
+    """Create a short random walk whose intermediate points are projected back onto the surface."""
+    point, normal = _nearest_surface_point(tree, start)
+    path = [(point + normal * surface_offset, normal.copy())]
+    for _index in range(steps):
+        random_direction = Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)))
+        tangent = random_direction - normal * random_direction.dot(normal)
+        if tangent.length < 1e-6:
+            tangent = normal.orthogonal()
+        tangent.normalize()
+        travel = step_distance * rng.uniform(0.65, 1.35)
+        target = point + tangent * travel
+        next_point, next_normal = _nearest_surface_point(tree, target)
+        if (next_point - point).length < step_distance * 0.08:
+            target = point - tangent * travel
+            next_point, next_normal = _nearest_surface_point(tree, target)
+        if (next_point - point).length < 1e-5:
+            next_point, next_normal = point.copy(), normal.copy()
+        point, normal = next_point, next_normal
+        path.append((point + normal * surface_offset, normal.copy()))
+    path.append(path[0])
+    return path
+
+
+def _remove_location_rotation_curves(obj):
+    action = obj.animation_data.action if obj.animation_data and obj.animation_data.action else None
+    if action is None:
+        return
+    for curve in list(action.fcurves):
+        if curve.data_path in {"location", "rotation_quaternion", "rotation_euler"}:
+            action.fcurves.remove(curve)
+
+
+def _animate_object_crawl(obj, path, start_frame, step_frames, align_normal):
+    """Insert looping transform keys on this object without changing its Geometry Nodes modifier."""
+    _remove_location_rotation_curves(obj)
+    obj.rotation_mode = "QUATERNION"
+    original_rotation = obj.rotation_quaternion.copy()
+    total_segments = max(1, len(path) - 1)
+    for index, (point, normal) in enumerate(path):
+        frame = int(start_frame + index * step_frames)
+        obj.location = point
+        obj.rotation_quaternion = normal.to_track_quat("Z", "Y") if align_normal else original_rotation
+        obj.keyframe_insert(data_path="location", frame=frame, group="VIN Surface Crawl")
+        if align_normal:
+            obj.keyframe_insert(data_path="rotation_quaternion", frame=frame, group="VIN Surface Crawl")
+    action = obj.animation_data.action if obj.animation_data else None
+    if action:
+        for curve in action.fcurves:
+            if curve.data_path not in {"location", "rotation_quaternion"}:
+                continue
+            for key in curve.keyframe_points:
+                key.interpolation = "LINEAR"
+            cycles = curve.modifiers.new(type="CYCLES")
+            cycles.mode_before = "REPEAT"
+            cycles.mode_after = "REPEAT"
+    obj["vinmotion_surface_crawl"] = True
+    obj["vinmotion_crawl_loop_frames"] = total_segments * step_frames
+
+
 class VINMOTION_Settings(bpy.types.PropertyGroup):
     animation_type: EnumProperty(name="Animation", items=ANIMATION_ITEMS, default="BOB")
     animation_speed: FloatProperty(name="Speed", default=1.0, min=0.0, max=20.0, precision=2)
@@ -616,6 +702,16 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     spawn_start_frame: IntProperty(name="First Spawn Frame", default=1, min=1, max=100000)
     spawn_stagger_frames: IntProperty(name="Spawn Stagger", default=72, min=0, max=100000)
     spawn_growth_frames: IntProperty(name="Growth Frames", default=16, min=1, max=1000)
+
+    crawl_surface: PointerProperty(name="Crawl Surface", description="Mesh surface that selected objects will follow", type=bpy.types.Object)
+    crawl_seed: IntProperty(name="Crawl Seed", default=93, min=0, max=9999999)
+    crawl_steps: IntProperty(name="Path Steps", default=10, min=2, max=64)
+    crawl_step_frames: IntProperty(name="Frames per Step", default=18, min=2, max=1000)
+    crawl_step_distance: FloatProperty(name="Step Distance", default=0.35, min=0.01, max=20.0, precision=2)
+    crawl_surface_offset: FloatProperty(name="Surface Offset", default=0.025, min=0.0, max=5.0, precision=3)
+    crawl_stagger_frames: IntProperty(name="Start Stagger", default=36, min=0, max=10000)
+    crawl_start_frame: IntProperty(name="First Crawl Frame", default=1, min=1, max=100000)
+    crawl_align_normal: BoolProperty(name="Align to Surface", default=False)
 
     scatter_density: FloatProperty(name="Density", default=2.0, min=0.01, max=100.0, precision=2)
     scatter_noise_scale: FloatProperty(name="Noise Scale", default=1.4, min=0.01, max=50.0, precision=2)
