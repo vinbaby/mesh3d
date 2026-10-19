@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.3.1
+# VIN Motion Lab — Standalone Blender Add-on v0.3.2
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
