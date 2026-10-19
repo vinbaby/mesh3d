@@ -220,15 +220,22 @@ def _remove_owned_glare(scene):
     glare = tree.nodes.get(GLARE_NODE_NAME)
     if glare is None:
         return
-    incoming = list(glare.inputs["Image"].links) if glare.inputs.get("Image") else []
-    outgoing = list(glare.outputs["Image"].links) if glare.outputs.get("Image") else []
-    for link in outgoing:
+    # Capture sockets first: NodeLink RNA references become invalid as soon as links are removed.
+    incoming_sources = [
+        link.from_socket for link in list(glare.inputs["Image"].links)
+    ] if glare.inputs.get("Image") else []
+    outgoing_targets = [
+        link.to_socket for link in list(glare.outputs["Image"].links)
+    ] if glare.outputs.get("Image") else []
+    for link in list(glare.outputs["Image"].links):
         tree.links.remove(link)
-    for link in incoming:
-        for destination in outgoing:
+    for link in list(glare.inputs["Image"].links):
+        tree.links.remove(link)
+    for source in incoming_sources[:1]:
+        for target in outgoing_targets:
             try:
-                tree.links.new(link.from_socket, destination.to_socket)
-            except RuntimeError:
+                tree.links.new(source, target)
+            except (RuntimeError, TypeError):
                 pass
     tree.nodes.remove(glare)
 
@@ -276,15 +283,21 @@ def _remove_glow(scene):
     glare = tree.nodes.get(GLARE_NODE_NAME)
     if glare is None:
         return
-    incoming = list(glare.inputs["Image"].links) if glare.inputs.get("Image") else []
-    outgoing = list(glare.outputs["Image"].links) if glare.outputs.get("Image") else []
-    for link in outgoing:
+    incoming_sources = [
+        link.from_socket for link in list(glare.inputs["Image"].links)
+    ] if glare.inputs.get("Image") else []
+    outgoing_targets = [
+        link.to_socket for link in list(glare.outputs["Image"].links)
+    ] if glare.outputs.get("Image") else []
+    for link in list(glare.outputs["Image"].links):
         tree.links.remove(link)
-    for link in incoming:
-        for destination in outgoing:
+    for link in list(glare.inputs["Image"].links):
+        tree.links.remove(link)
+    for source in incoming_sources[:1]:
+        for target in outgoing_targets:
             try:
-                tree.links.new(link.from_socket, destination.to_socket)
-            except RuntimeError:
+                tree.links.new(source, target)
+            except (RuntimeError, TypeError):
                 pass
     tree.nodes.remove(glare)
 
