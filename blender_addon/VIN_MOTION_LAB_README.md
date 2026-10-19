@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.7.0
+# VIN Motion Lab — Standalone Blender Add-on v0.8.1
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -18,6 +18,27 @@ Select one or more mesh/curve objects, choose a mode, and click **Build on Selec
 For Living Entity, a mesh with enough geometry gives the best result. Surface Detail increases subdivision before deformation; start at 2, then try 3 for smoother motion. Very low-poly meshes otherwise cannot deform into soft shapes. The Color Ramp inside the Geometry Nodes graph can be edited to change which regions move.
 
 The generated Geometry Nodes group is editable. Play the timeline to preview Scene Time-driven motion.
+
+### Object Motion Actions — eight transform-keyframed presets
+
+These presets live in the separate **VIN Actions** sidebar tab. Unlike the Geometry Nodes presets in VIN Animate, they insert regular transform keyframes on each selected object. Each object gets its own Action, with its own randomized seed/variation. Existing Geometry Nodes modifiers are left intact; existing location, rotation and scale animation channels on the assigned Action are replaced.
+
+- **Wobble / Tumble** — smooth, uneven three-axis rotation; loops.
+- **Shockwave Reaction** — each object kicks away from the center then settles at its original transform. Reaction start is staggered by distance; this is a one-shot action that holds after it finishes.
+- **Orbit / Revolve** — actual object transforms follow a closed orbit around an optional anchor. If no anchor is assigned, the average position of selected objects is used.
+- **Magnet Pull / Repel** — each object moves toward or away from the center, then returns; select Pull or Repel.
+- **Glitch / Teleport** — discrete position/rotation jumps with constant key interpolation; loops.
+- **Fold / Unfold** — parts rotate and shrink around their own origins, then open again. Use separate components/panels for the best result.
+- **Dissolve / Assemble** — selected objects shrink and scatter, re-form at their original positions, then dissolve; objects are not physically fractured by this action.
+- **Wave Cascade** — a looping wave phase is derived from each object's position along the selected X/Y/Z propagation axis; objects lift on Z and rock in sequence.
+
+Controls: Motion Amount sets distance/rotation/amplitude depending on the selected preset; Speed changes cycle duration; Cycle Frames sets base timing; Motion Seed changes randomized directions/variation. Center / Anchor is available for shockwave, orbit and magnet actions. Leave it empty to use the average selected position. The operator starts from the current timeline frame.
+
+Tips:
+1. Select only the objects you want affected. For a collection of sci-fi parts, multi-select the parts in the Outliner.
+2. If using Shockwave, Orbit or Magnet, optionally pick an anchor object.
+3. Click **Apply to Selected** and play the timeline. Check the object's Action in the Dope Sheet to inspect keys.
+4. Fold/Unfold and Dissolve/Assemble animate the selected objects themselves; they do not cut one joined mesh into separate panels or fragments.
 
 ### Surface Spawn / Individual Motion
 
@@ -72,3 +93,8 @@ The panel is split into four separate Viewport Sidebar tabs: VIN Animate, VIN Sc
 ### Lattice Pulse controls
 
 Select one or more Alien Lattice layers or other meshes, choose **Lattice Pulse**, then use Strength, Lattice Noise Scale, Lattice Wave Frequency and Lattice Mask Threshold. Click **Build on Selected** to assign a separate Geometry Nodes graph and phase per object. Keep Strength modest (around 0.05–0.18 for thin lattice struts) to preserve the structural silhouette.
+
+
+### Sidebar tabs v0.8.1
+
+The Viewport Sidebar uses VIN Animate (Geometry Nodes motion), VIN Actions (real transform keyframes), VIN Scatter, VIN Spawn and VIN Crawl. Each Object Motion Action creates one independent Action per selected object.
