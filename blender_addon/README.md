@@ -10,7 +10,7 @@ Shape families include Twisted Column, Orbital Cage, Organic Blob, Crystal Clust
 ### Alien Lattice — 3 editable layers
 
 Choose **Alien Lattice** and click **Generate Object**. It creates a seeded organic C-loop with three selectable objects:
-- **Shell** — broken porcelain-like surface patches with an adjustable-looking procedural distribution of holes and shell thickness.
+- **Shell** — broken porcelain-like surface patches with an seed-driven distribution of holes and shell thickness.
 - **Triangular Frame** — dark space-frame struts, circumferential supports and alternating diagonal braces.
 - **Metal Beads** — randomized metallic bead clusters concentrated around several seed-selected hotspots.
 
