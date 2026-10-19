@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.6.0
+# VIN Motion Lab — Standalone Blender Add-on v0.7.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -13,6 +13,7 @@ Select one or more mesh/curve objects, choose a mode, and click **Build on Selec
 - **Living Entity** — subdivides the input surface, animates a 4D Noise field, maps it through an editable Color Ramp mask, displaces selected regions in noise directions and along surface normals, and adds a slower radial breathing cycle. Controls: Deform Strength, Organic Noise Scale, Breathing, Mask Threshold, and Surface Detail.
 - **3D Drift** — a looping three-axis floating path; X, Y and Z use different frequencies and phase offsets.
 - **Radial Pulse** — a travelling wave that moves vertices along radial directions; Wave Frequency controls ring spacing, and Wave Detail adds surface resolution.
+- **Lattice Pulse** — a per-object 4D Noise / Color Ramp vibration that moves selected vertices along their surface normals; it works especially well on Alien Lattice's shell, triangular frame and bead layers.
 
 For Living Entity, a mesh with enough geometry gives the best result. Surface Detail increases subdivision before deformation; start at 2, then try 3 for smoother motion. Very low-poly meshes otherwise cannot deform into soft shapes. The Color Ramp inside the Geometry Nodes graph can be edited to change which regions move.
 
@@ -66,3 +67,8 @@ Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases
 ## Sidebar layout v0.5.0
 
 The panel is split into four separate Viewport Sidebar tabs: VIN Animate, VIN Scatter, VIN Spawn and VIN Crawl. Use one tab at a time; each contains only its own controls.
+
+
+### Lattice Pulse controls
+
+Select one or more Alien Lattice layers or other meshes, choose **Lattice Pulse**, then use Strength, Lattice Noise Scale, Lattice Wave Frequency and Lattice Mask Threshold. Click **Build on Selected** to assign a separate Geometry Nodes graph and phase per object. Keep Strength modest (around 0.05–0.18 for thin lattice struts) to preserve the structural silhouette.
