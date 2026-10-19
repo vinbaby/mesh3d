@@ -38,3 +38,6 @@ It provides a procedural 3D shape generator and an Animation Builder that create
 Animation is being kept in its own add-on so it does not interfere with the procedural shape generator. Download [`blender_addon/vin_motion_lab.py`](blender_addon/vin_motion_lab.py) and follow [`blender_addon/VIN_MOTION_LAB_README.md`](blender_addon/VIN_MOTION_LAB_README.md).
 
 VIN Motion Lab uses its own **VIN Motion** sidebar tab and provides Bob/Float, Spin, Pulse, Twist, plus a Noise/Color Ramp Geometry Nodes scatter tool for a Plane. It can be installed alongside VIN Procedural Lab.
+
+
+Alien Lattice was added to the procedural generator: a 3-layer organic shell / triangular space-frame / metal-bead sculpture. VIN Motion Lab v0.7.0 adds Lattice Pulse to deform each layer independently with a Noise/Color Ramp mask. See the add-on READMEs for use and installation.
