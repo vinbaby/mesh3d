@@ -23,6 +23,8 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert "class VINMOTION_OT_build_animation" in source
     assert '("DRIFT", "3D Drift"' in source
     assert '("RADIAL", "Radial Pulse"' in source
+    assert '("LATTICE_PULSE", "Lattice Pulse"' in source
+    assert 'elif animation_type == "LATTICE_PULSE"' in source
     assert 'elif animation_type == "DRIFT"' in source
     assert 'elif animation_type == "RADIAL"' in source
     assert "class VINMOTION_OT_reset_motion" in source
@@ -77,6 +79,7 @@ def test_procedural_shape_generators_are_present() -> None:
         "_build_orbital_particle",
         "_build_cellular_void",
         "_build_spike_bloom",
+        "_build_alien_lattice_parts",
     ):
         assert f"def {builder}" in source
     assert "class VINLAB_OT_generate_shape" in source
@@ -90,6 +93,9 @@ def test_procedural_shape_generators_are_present() -> None:
     assert "Orbital Particle" in source
     assert "Cellular Void" in source
     assert "Spike Bloom" in source
+    assert "Alien Lattice" in source
+    assert "Triangular Frame" in source
+    assert "Damaged shell" in source or "damaged ceramic shell" in source
     assert "def _append_hex_tile" in source
     assert "def _append_uv_sphere" in source
     assert "random.Random(settings.seed)" in source
