@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.4.2
+# VIN Motion Lab — Standalone Blender Add-on v0.5.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -59,3 +59,8 @@ Leave VIN Procedural Lab installed if you still use its shape generator. The two
 
 ## Compatibility
 Targets Blender 3.6+. Geometry Nodes APIs vary somewhat between Blender releases. The repository runtime test exercises five animation graphs, including Living Entity, the instance-based scatter graph, Surface Spawn's separate objects and unique per-object node groups, and Surface Crawl's independent looping paths.
+
+
+## Sidebar layout v0.5.0
+
+The panel is split into four separate Viewport Sidebar tabs: VIN Animate, VIN Scatter, VIN Spawn and VIN Crawl. Use one tab at a time; each contains only its own controls.
