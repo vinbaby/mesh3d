@@ -61,6 +61,54 @@ def main() -> None:
                 raise AssertionError("Living Entity graph does not contain enough field links")
         print(f"[OK] VIN Motion {animation_type}: {len(modifier.node_group.nodes)} nodes, {len(modifier.node_group.links)} links")
 
+    # Build a motion on several selected objects and prove each receives a unique graph/phase.
+    settings.animation_type = "LIVING"
+    settings.animation_speed = 1.0
+    settings.animation_amount = 0.35
+    settings.entity_noise_scale = 1.6
+    settings.entity_breathing = 0.18
+    settings.entity_mask_threshold = 0.30
+    settings.entity_subdivision = 2
+    settings.animation_phase_spread = 6.283
+    multi_targets = [target]
+    for index in range(2):
+        dup = target.copy()
+        dup.data = target.data.copy()
+        dup.animation_data_clear()
+        bpy.context.scene.collection.objects.link(dup)
+        dup.location.x = (index + 1) * 3.0
+        multi_targets.append(dup)
+    for obj in bpy.context.selected_objects:
+        obj.select_set(False)
+    for obj in multi_targets:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = multi_targets[0]
+    result = bpy.ops.vinmotion.build_animation()
+    if "FINISHED" not in result:
+        raise AssertionError(f"Multi-object animation builder failed: {result}")
+    graph_ids = set()
+    phases = set()
+    for obj in multi_targets:
+        mod = obj.modifiers.get("VIN Motion · Animation")
+        if mod is None or mod.node_group is None:
+            raise AssertionError(f"{obj.name} has no independently assigned node graph")
+        graph_ids.add(mod.node_group.as_pointer())
+        phases.add(round(float(obj.get("vinmotion_phase", 0.0)), 4))
+    if len(graph_ids) != len(multi_targets):
+        raise AssertionError("Selected objects are sharing one node group")
+    if len(phases) != len(multi_targets):
+        raise AssertionError("Selected objects did not receive distinct animation phases")
+    print(f"[OK] Multi-object motion: {len(multi_targets)} separate node graphs and phases")
+
+    reset_result = bpy.ops.vinmotion.reset_motion()
+    if "FINISHED" not in reset_result:
+        raise AssertionError("Reset Motion Defaults operator failed")
+    if abs(settings.animation_speed - 1.0) > 1e-5 or abs(settings.animation_amount - 0.35) > 1e-5:
+        raise AssertionError("Reset Motion Defaults did not restore visible starter values")
+    if abs(settings.entity_mask_threshold - 0.30) > 1e-5:
+        raise AssertionError("Reset Motion Defaults did not reset Living Entity mask threshold")
+    print("[OK] Reset Motion Defaults: visible Living Entity starter settings")
+
     # Create an independent source collection with two object choices and an unrelated Plane.
     source_collection = bpy.data.collections.new("VIN Motion Test Sources")
     bpy.context.scene.collection.children.link(source_collection)
