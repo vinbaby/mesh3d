@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Material Lab",
     "author": "VIN / OpenAI",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Material",
     "description": "Standalone shader-node builder for curated sci-fi colors and surface textures",
@@ -62,16 +62,126 @@ PALETTES = {
         "accent": (0.96, 0.085, 0.008),
         "bright": (0.68, 0.70, 0.72),
     },
+    "EARTH_NATURAL": {
+        "dark": (0.045, 0.025, 0.014),
+        "base": (0.30, 0.16, 0.075),
+        "mid": (0.49, 0.32, 0.16),
+        "accent": (0.74, 0.36, 0.10),
+        "bright": (0.80, 0.70, 0.52),
+    },
+    "SOFT_PASTEL": {
+        "dark": (0.16, 0.18, 0.24),
+        "base": (0.58, 0.66, 0.78),
+        "mid": (0.86, 0.68, 0.74),
+        "accent": (0.95, 0.55, 0.40),
+        "bright": (0.95, 0.91, 0.84),
+    },
+    "OCEAN_COAST": {
+        "dark": (0.012, 0.055, 0.085),
+        "base": (0.035, 0.28, 0.37),
+        "mid": (0.12, 0.60, 0.68),
+        "accent": (0.96, 0.55, 0.27),
+        "bright": (0.78, 0.91, 0.89),
+    },
+    "FOREST_MOSS": {
+        "dark": (0.015, 0.045, 0.029),
+        "base": (0.10, 0.22, 0.12),
+        "mid": (0.33, 0.43, 0.20),
+        "accent": (0.70, 0.42, 0.12),
+        "bright": (0.77, 0.75, 0.58),
+    },
+    "CANDY_POP": {
+        "dark": (0.055, 0.025, 0.16),
+        "base": (0.28, 0.13, 0.58),
+        "mid": (0.02, 0.62, 0.76),
+        "accent": (0.96, 0.09, 0.30),
+        "bright": (1.0, 0.78, 0.20),
+    },
+    "CLAY_TERRACOTTA": {
+        "dark": (0.14, 0.055, 0.033),
+        "base": (0.47, 0.17, 0.095),
+        "mid": (0.70, 0.32, 0.18),
+        "accent": (0.88, 0.58, 0.34),
+        "bright": (0.94, 0.81, 0.63),
+    },
 }
 
 FINISHES = {
     "TITANIUM": (0.82, 0.23),
     "BLACK_CHROME": (0.96, 0.12),
-    "PORCELAIN": (0.16, 0.22),
+    "PORCELAIN": (0.02, 0.22),
     "CARBON_COMPOSITE": (0.46, 0.31),
-    "ALIEN_POROUS": (0.38, 0.29),
-    "ENERGY_CERAMIC": (0.26, 0.18),
+    "ALIEN_POROUS": (0.08, 0.66),
+    "ENERGY_CERAMIC": (0.08, 0.18),
+    "CLEAR_GLASS": (0.0, 0.025),
+    "FROSTED_GLASS": (0.0, 0.24),
+    "CLEAR_PLASTIC": (0.0, 0.12),
+    "MATTE_PLASTIC": (0.0, 0.43),
+    "RUBBER": (0.0, 0.84),
+    "FABRIC": (0.0, 0.88),
+    "LEATHER": (0.0, 0.48),
+    "WOOD": (0.0, 0.42),
+    "STONE": (0.0, 0.82),
+    "PAPER": (0.0, 0.90),
 }
+
+FINISH_PHYSICS = {
+    "TITANIUM": {"metallic": 0.82, "roughness": 0.23, "ior": 1.45},
+    "BLACK_CHROME": {"metallic": 0.96, "roughness": 0.12, "ior": 1.48},
+    "PORCELAIN": {"metallic": 0.02, "roughness": 0.22, "ior": 1.48, "coat": 0.18},
+    "CARBON_COMPOSITE": {"metallic": 0.46, "roughness": 0.31, "ior": 1.50},
+    "ALIEN_POROUS": {"metallic": 0.08, "roughness": 0.66, "ior": 1.42},
+    "ENERGY_CERAMIC": {"metallic": 0.08, "roughness": 0.18, "ior": 1.48, "coat": 0.3},
+    "CLEAR_GLASS": {"metallic": 0.0, "roughness": 0.025, "ior": 1.46, "transmission": 1.0},
+    "FROSTED_GLASS": {"metallic": 0.0, "roughness": 0.24, "ior": 1.46, "transmission": 0.9},
+    "CLEAR_PLASTIC": {"metallic": 0.0, "roughness": 0.12, "ior": 1.46, "transmission": 0.58, "coat": 0.22},
+    "MATTE_PLASTIC": {"metallic": 0.0, "roughness": 0.43, "ior": 1.46, "coat": 0.06},
+    "RUBBER": {"metallic": 0.0, "roughness": 0.84, "ior": 1.48},
+    "FABRIC": {"metallic": 0.0, "roughness": 0.88, "ior": 1.46, "sheen": 0.42},
+    "LEATHER": {"metallic": 0.0, "roughness": 0.48, "ior": 1.46, "sheen": 0.08, "coat": 0.12},
+    "WOOD": {"metallic": 0.0, "roughness": 0.42, "ior": 1.46, "coat": 0.08},
+    "STONE": {"metallic": 0.0, "roughness": 0.82, "ior": 1.46},
+    "PAPER": {"metallic": 0.0, "roughness": 0.90, "ior": 1.46},
+}
+
+
+def _set_input(node, names, value):
+    socket = _socket(node, *names) if isinstance(names, tuple) else _socket(node, names)
+    if socket is not None:
+        socket.default_value = value
+        return True
+    return False
+
+
+def _apply_finish_physics(material, shader, finish):
+    spec = FINISH_PHYSICS.get(finish, {})
+    for key, names in (
+        ("metallic", ("Metallic",)),
+        ("roughness", ("Roughness",)),
+        ("ior", ("IOR",)),
+        ("transmission", ("Transmission Weight", "Transmission")),
+        ("sheen", ("Sheen Weight", "Sheen")),
+        ("coat", ("Coat Weight", "Clearcoat")),
+    ):
+        if key in spec:
+            _set_input(shader, names, spec[key])
+    if finish in {"CLEAR_GLASS", "FROSTED_GLASS", "CLEAR_PLASTIC"}:
+        # Eevee transparency controls differ across Blender versions; set only properties that exist.
+        if hasattr(material, "blend_method"):
+            try:
+                material.blend_method = "BLEND"
+            except (TypeError, ValueError):
+                pass
+        if hasattr(material, "use_screen_refraction"):
+            material.use_screen_refraction = True
+        if hasattr(material, "surface_render_method"):
+            try:
+                material.surface_render_method = "DITHERED"
+            except (TypeError, ValueError):
+                pass
+        if hasattr(material, "show_transparent_back"):
+            material.show_transparent_back = True
+
 
 
 def _socket(node, *names):
@@ -108,7 +218,7 @@ def _make_material(settings, material_name, seed_offset=0):
     material = bpy.data.materials.new(name=material_name)
     material.use_nodes = True
     material.diffuse_color = _rgb(palette["base"])
-    material["vinmat_version"] = "0.1.0"
+    material["vinmat_version"] = "0.2.0"
     material["vinmat_palette"] = settings.palette
     material["vinmat_finish"] = settings.surface_finish
     material["vinmat_texture"] = settings.texture_pattern
@@ -125,6 +235,7 @@ def _make_material(settings, material_name, seed_offset=0):
     metallic, roughness = FINISHES[settings.surface_finish]
     shader.inputs["Metallic"].default_value = metallic
     shader.inputs["Roughness"].default_value = roughness
+    _apply_finish_physics(material, shader, settings.surface_finish)
 
     coords = _new_node(nodes, "ShaderNodeTexCoord", "VINMAT · Coordinates", (-1100, 180))
     mapping = _new_node(nodes, "ShaderNodeMapping", "VINMAT · Seed Mapping", (-900, 180))
@@ -221,6 +332,81 @@ def _make_material(settings, material_name, seed_offset=0):
         factor = wave.outputs["Fac"]
         bump_factor = factor
 
+    elif pattern == "FABRIC_WEAVE":
+        warp = _new_node(nodes, "ShaderNodeTexWave", "VINMAT · Warp Fibres", (x0, 390))
+        weft = _new_node(nodes, "ShaderNodeTexWave", "VINMAT · Weft Fibres", (x0, 80))
+        for wave, direction in ((warp, "X"), (weft, "Y")):
+            wave.wave_type = "BANDS"
+            wave.bands_direction = direction
+            wave.inputs["Scale"].default_value = settings.texture_scale * 13.0
+            wave.inputs["Distortion"].default_value = 0.22
+            wave.inputs["Detail"].default_value = 1.0
+            links.new(mapping.outputs["Vector"], wave.inputs["Vector"])
+        weave = _new_node(nodes, "ShaderNodeMath", "VINMAT · Woven Fibre Intersections", (-380, 250))
+        weave.operation = "MULTIPLY"
+        links.new(warp.outputs["Fac"], weave.inputs[0])
+        links.new(weft.outputs["Fac"], weave.inputs[1])
+        factor = weave.outputs[0]
+        bump_factor = factor
+
+    elif pattern == "WOOD_GRAIN":
+        wood_noise = _new_node(nodes, "ShaderNodeTexNoise", "VINMAT · Wood Grain Distortion", (x0, 420))
+        wood_noise.inputs["Scale"].default_value = settings.texture_scale * 0.75
+        wood_noise.inputs["Detail"].default_value = max(2.0, float(settings.texture_detail))
+        links.new(mapping.outputs["Vector"], wood_noise.inputs["Vector"])
+        grain = _new_node(nodes, "ShaderNodeTexWave", "VINMAT · Flowing Wood Grain", (x0, 100))
+        grain.wave_type = "BANDS"
+        grain.bands_direction = "X"
+        grain.inputs["Scale"].default_value = settings.texture_scale * 4.0
+        grain.inputs["Distortion"].default_value = 7.0
+        grain.inputs["Detail"].default_value = 4.0
+        links.new(mapping.outputs["Vector"], grain.inputs["Vector"])
+        links.new(wood_noise.outputs["Fac"], grain.inputs["Distortion"])
+        factor = grain.outputs["Fac"]
+        bump_factor = factor
+
+    elif pattern == "SPECKLED_STONE":
+        mineral = _new_node(nodes, "ShaderNodeTexVoronoi", "VINMAT · Mineral Speckles", (x0, y0))
+        mineral.feature = "F1"
+        mineral.distance = "EUCLIDEAN"
+        mineral.inputs["Scale"].default_value = settings.texture_scale * 4.5
+        links.new(mapping.outputs["Vector"], mineral.inputs["Vector"])
+        mineral_noise = _new_node(nodes, "ShaderNodeTexNoise", "VINMAT · Stone Clouding", (x0, -130))
+        mineral_noise.inputs["Scale"].default_value = settings.texture_scale * 0.8
+        mineral_noise.inputs["Detail"].default_value = settings.texture_detail
+        links.new(mapping.outputs["Vector"], mineral_noise.inputs["Vector"])
+        combined = _new_node(nodes, "ShaderNodeMath", "VINMAT · Stone Flecks", (-370, 250))
+        combined.operation = "MULTIPLY"
+        links.new(mineral.outputs["Distance"], combined.inputs[0])
+        links.new(mineral_noise.outputs["Fac"], combined.inputs[1])
+        factor = combined.outputs[0]
+        bump_factor = mineral.outputs["Distance"]
+
+    elif pattern == "MICRO_SCRATCHES":
+        scratch_noise = _new_node(nodes, "ShaderNodeTexNoise", "VINMAT · Scratch Breakup", (x0, 420))
+        scratch_noise.inputs["Scale"].default_value = settings.texture_scale * 0.55
+        scratch_noise.inputs["Detail"].default_value = 2.0
+        links.new(mapping.outputs["Vector"], scratch_noise.inputs["Vector"])
+        scratches = _new_node(nodes, "ShaderNodeTexWave", "VINMAT · Fine Scratch Lines", (x0, 90))
+        scratches.wave_type = "BANDS"
+        scratches.bands_direction = "X"
+        scratches.inputs["Scale"].default_value = settings.texture_scale * 23.0
+        scratches.inputs["Distortion"].default_value = 1.2
+        scratches.inputs["Detail"].default_value = 2.0
+        links.new(mapping.outputs["Vector"], scratches.inputs["Vector"])
+        links.new(scratch_noise.outputs["Fac"], scratches.inputs["Distortion"])
+        factor = scratches.outputs["Fac"]
+        bump_factor = factor
+
+    elif pattern == "WATER_DROPLETS":
+        droplets = _new_node(nodes, "ShaderNodeTexVoronoi", "VINMAT · Droplet Cells", (x0, y0))
+        droplets.feature = "F1"
+        droplets.distance = "EUCLIDEAN"
+        droplets.inputs["Scale"].default_value = settings.texture_scale * 3.0
+        links.new(mapping.outputs["Vector"], droplets.inputs["Vector"])
+        factor = droplets.outputs["Distance"]
+        bump_factor = factor
+
     ramp = _new_node(nodes, "ShaderNodeValToRGB", "VINMAT · Color Ramp", (-100, 230))
     ramp.label = "VIN Material · Palette Ramp"
     elements = ramp.color_ramp.elements
@@ -249,6 +435,14 @@ def _make_material(settings, material_name, seed_offset=0):
         element.color = _rgb(color)
     links.new(factor, ramp.inputs["Fac"])
     links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
+
+    # Fine-grain physical response differs by finish; tweak the exposed Principled sockets when available.
+    if settings.surface_finish == "PAPER":
+        _set_input(shader, ("Subsurface Weight", "Subsurface"), 0.035)
+    elif settings.surface_finish == "FABRIC":
+        _set_input(shader, ("Sheen Tint",), _rgb(palette["bright"]))
+    elif settings.surface_finish == "RUBBER":
+        _set_input(shader, ("Specular IOR Level", "Specular"), 0.24)
 
     bump = _new_node(nodes, "ShaderNodeBump", "VINMAT · Surface Relief", (420, -160))
     bump.inputs["Strength"].default_value = settings.bump_strength
@@ -279,6 +473,12 @@ class VINMAT_Settings(bpy.types.PropertyGroup):
             ("TITANIUM_SUNSET", "Titanium Sunset", "Cold titanium and orange accents"),
             ("PORCELAIN_CHAMPAGNE", "Porcelain Champagne", "Ivory ceramic with champagne metal"),
             ("VOID_EMBER", "Void Ember", "Black metal and ember-orange highlights"),
+            ("EARTH_NATURAL", "Earth & Natural", "Wood, leather, stone, clay and natural pigments"),
+            ("SOFT_PASTEL", "Soft Pastel", "Gentle pastel colors for toys, props and interiors"),
+            ("OCEAN_COAST", "Ocean & Coast", "Ocean blue, sea glass and warm sand"),
+            ("FOREST_MOSS", "Forest & Moss", "Moss, leaf green and earthy amber"),
+            ("CANDY_POP", "Candy Pop", "Playful saturated colors for stylized assets"),
+            ("CLAY_TERRACOTTA", "Clay / Terracotta", "Warm red clay and ceramic tones"),
         ],
         default="CYBER_AMBER",
     )
@@ -291,6 +491,16 @@ class VINMAT_Settings(bpy.types.PropertyGroup):
             ("CARBON_COMPOSITE", "Carbon Composite", "Semi-metallic composite"),
             ("ALIEN_POROUS", "Alien Porous", "Organic-looking, irregular material"),
             ("ENERGY_CERAMIC", "Energy Ceramic", "Glossy ceramic for glowing sci-fi parts"),
+            ("CLEAR_GLASS", "Clear Glass", "Highly transmissive polished glass"),
+            ("FROSTED_GLASS", "Frosted Glass", "Translucent rough glass with soft highlights"),
+            ("CLEAR_PLASTIC", "Clear Plastic", "Tintable transparent plastic or acrylic"),
+            ("MATTE_PLASTIC", "Matte Plastic", "Opaque soft-reflection plastic"),
+            ("RUBBER", "Rubber", "Dark, matte, soft-looking rubber"),
+            ("FABRIC", "Fabric / Cloth", "Textile surface with high roughness and sheen"),
+            ("LEATHER", "Leather", "Semi-matte hide with a restrained sheen"),
+            ("WOOD", "Wood", "Natural-looking wood with a satin finish"),
+            ("STONE", "Stone / Concrete", "Rough mineral surface"),
+            ("PAPER", "Paper / Card", "Dry, matte paper, cardboard or cardstock"),
         ],
         default="TITANIUM",
     )
@@ -304,6 +514,11 @@ class VINMAT_Settings(bpy.types.PropertyGroup):
             ("HEX_CELLS", "Hex / Cell Pattern", "Voronoi cell boundaries and surface relief"),
             ("PITTED", "Pitted / Porous", "Irregular mottling with procedural relief"),
             ("CIRCUIT_LINES", "Circuit Lines", "Distorted directional lines like etched tracks"),
+            ("FABRIC_WEAVE", "Fabric Weave", "Crossed fibres and textile relief"),
+            ("WOOD_GRAIN", "Wood Grain", "Long flowing wood grain with noisy distortion"),
+            ("SPECKLED_STONE", "Speckled Stone", "Mineral flecks and rough stone relief"),
+            ("MICRO_SCRATCHES", "Micro Scratches", "Fine scratch lines broken by noise"),
+            ("WATER_DROPLETS", "Water Droplets", "Small rounded droplet-like surface cells"),
         ],
         default="NOISE_RAMP",
     )
@@ -382,6 +597,12 @@ class VINMAT_PT_main(bpy.types.Panel):
         box.label(text="1 · Art-Directed Color", icon="MATERIAL")
         box.prop(settings, "palette")
         box.prop(settings, "surface_finish")
+        if settings.surface_finish in {"CLEAR_GLASS", "FROSTED_GLASS", "CLEAR_PLASTIC"}:
+            box.label(text="Transparent materials look best in Material Preview or Rendered mode.")
+        elif settings.surface_finish in {"FABRIC", "LEATHER", "RUBBER", "PAPER"}:
+            box.label(text="Use Fabric Weave, Micro Scratches or Noise for surface detail.")
+        elif settings.surface_finish == "WOOD":
+            box.label(text="Wood Grain is the recommended texture pattern.")
         box.prop(settings, "seed")
         box.label(text="A new Seed offsets the procedural pattern.")
         box = layout.box()
