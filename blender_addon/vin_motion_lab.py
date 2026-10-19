@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 4, 1),
+    "version": (0, 4, 2),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
     "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
@@ -972,6 +972,74 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class VINMOTION_OT_surface_crawl(bpy.types.Operator):
+    bl_idname = "vinmotion.surface_crawl"
+    bl_label = "Animate Selected Along Surface"
+    bl_description = "Give each selected object an independent random-walk path projected onto a target mesh surface"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinmotion_settings
+        surface = settings.crawl_surface
+        if surface is None or surface.type != "MESH":
+            self.report({"ERROR"}, "Choose a mesh in Crawl Surface first")
+            return {"CANCELLED"}
+        targets = [
+            obj for obj in context.selected_objects
+            if obj != surface and obj.type in {"MESH", "CURVE", "FONT", "SURFACE"}
+        ]
+        if not targets:
+            self.report({"ERROR"}, "Select the objects to move, and keep the target surface separate")
+            return {"CANCELLED"}
+        if any(obj.parent is not None for obj in targets):
+            self.report({"ERROR"}, "Surface Crawl currently needs unparented objects; duplicate/unparent the targets first")
+            return {"CANCELLED"}
+
+        try:
+            tree = _build_surface_bvh(surface, context.evaluated_depsgraph_get())
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not read Crawl Surface: {exc}")
+            return {"CANCELLED"}
+
+        rng = random.Random(settings.crawl_seed)
+        completed = 0
+        failure = None
+        try:
+            for index, obj in enumerate(targets):
+                object_rng = random.Random(rng.randint(0, 2**31 - 1))
+                world_position = obj.matrix_world.translation.copy()
+                path = _projected_random_walk(
+                    tree,
+                    world_position,
+                    object_rng,
+                    settings.crawl_step_distance,
+                    settings.crawl_steps,
+                    settings.crawl_surface_offset,
+                )
+                start_frame = settings.crawl_start_frame
+                if settings.crawl_stagger_frames:
+                    start_frame += object_rng.randint(0, settings.crawl_stagger_frames)
+                _animate_object_crawl(
+                    obj,
+                    path,
+                    start_frame,
+                    settings.crawl_step_frames,
+                    settings.crawl_align_normal,
+                )
+                obj["vinmotion_crawl_seed"] = settings.crawl_seed + index
+                obj["vinmotion_crawl_surface"] = surface.name
+                obj["vinmotion_crawl_start_frame"] = start_frame
+                obj["vinmotion_crawl_step_frames"] = settings.crawl_step_frames
+                completed += 1
+        except Exception as exc:
+            failure = exc
+        if failure is not None:
+            self.report({"ERROR"}, f"Surface Crawl stopped after {completed}/{len(targets)} objects: {failure}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Added independent looping crawl paths to {completed} object(s)")
+        return {"FINISHED"}
+
+
 class VINMOTION_OT_build_scatter(bpy.types.Operator):
     bl_idname = "vinmotion.build_scatter"
     bl_label = "Build Noise Scatter"
@@ -1098,6 +1166,20 @@ class VINMOTION_PT_main(bpy.types.Panel):
         row.prop(settings, "spawn_stagger_frames")
         box.prop(settings, "spawn_growth_frames")
         box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="NODETREE")
+
+        box = layout.box()
+        box.label(text="4 · Surface Crawl / Per-Object Path", icon="ANIM")
+        box.label(text="Select moving objects; choose a separate mesh surface")
+        box.prop(settings, "crawl_surface")
+        box.prop(settings, "crawl_seed")
+        box.prop(settings, "crawl_steps")
+        box.prop(settings, "crawl_step_frames")
+        box.prop(settings, "crawl_step_distance")
+        box.prop(settings, "crawl_surface_offset")
+        box.prop(settings, "crawl_start_frame")
+        box.prop(settings, "crawl_stagger_frames")
+        box.prop(settings, "crawl_align_normal")
+        box.operator("vinmotion.surface_crawl", text="Animate Selected Along Surface", icon="ACTION")
         layout.separator()
         layout.label(text="Standalone add-on — no effect on VIN Procedural Lab.")
 
@@ -1107,6 +1189,7 @@ CLASSES = (
     VINMOTION_OT_build_animation,
     VINMOTION_OT_reset_motion,
     VINMOTION_OT_surface_spawn,
+    VINMOTION_OT_surface_crawl,
     VINMOTION_OT_build_scatter,
     VINMOTION_PT_main,
 )
