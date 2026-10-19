@@ -123,6 +123,57 @@ def main() -> None:
         raise AssertionError("Scatter graph does not contain the expected node links")
 
     print(f"[OK] VIN Motion Noise / Color Ramp Scatter: {len(node_types)} node types, {len(modifier.node_group.links)} links")
+
+    # Surface Spawn must create real, individually selectable objects, each with its own node group.
+    spawn_plane_mesh = bpy.data.meshes.new("VIN Motion Spawn Plane Mesh")
+    spawn_plane_mesh.from_pydata([(-4,-4,0),(4,-4,0),(4,4,0),(-4,4,0)], [], [(0,1,2,3)])
+    spawn_plane_mesh.update()
+    spawn_plane = bpy.data.objects.new("VIN Motion Spawn Plane", spawn_plane_mesh)
+    bpy.context.scene.collection.objects.link(spawn_plane)
+
+    settings.spawn_source_collection = source_collection
+    settings.spawn_count = 12
+    settings.spawn_seed = 2026
+    settings.spawn_min_scale = 0.5
+    settings.spawn_max_scale = 1.0
+    settings.spawn_surface_offset = 0.02
+    settings.spawn_align_normal = True
+    settings.spawn_animation_mode = "RANDOM"
+    settings.spawn_speed_variance = 0.3
+    settings.spawn_amount_variance = 0.2
+    settings.spawn_phase_range = 6.283
+    settings.spawn_start_frame = 1
+    settings.spawn_stagger_frames = 30
+    settings.spawn_growth_frames = 10
+
+    for obj in bpy.context.selected_objects:
+        obj.select_set(False)
+    spawn_plane.select_set(True)
+    bpy.context.view_layer.objects.active = spawn_plane
+    spawn_result = bpy.ops.vinmotion.surface_spawn()
+    if "FINISHED" not in spawn_result:
+        raise AssertionError(f"Surface Spawn failed: {spawn_result}")
+    spawn_collection = bpy.data.collections.get("VIN Motion · Surface Spawn")
+    if spawn_collection is None:
+        raise AssertionError("Surface Spawn did not create an output collection")
+    spawned = [obj for obj in spawn_collection.objects if obj.type == "MESH"]
+    if len(spawned) != settings.spawn_count:
+        raise AssertionError(f"Expected {settings.spawn_count} separate objects, got {len(spawned)}")
+    node_group_ids = set()
+    assigned_types = set()
+    for obj in spawned:
+        mod = obj.modifiers.get("VIN Motion · Animation")
+        if mod is None or mod.type != "NODES" or mod.node_group is None:
+            raise AssertionError(f"{obj.name} has no independent animation modifier")
+        node_group_ids.add(mod.node_group.as_pointer())
+        assigned_types.add(obj.get("vinmotion_animation_type"))
+        if obj.animation_data is None or obj.animation_data.action is None:
+            raise AssertionError(f"{obj.name} has no growth keyframes")
+    if len(node_group_ids) != len(spawned):
+        raise AssertionError("Spawned objects are sharing animation node groups instead of receiving individual graphs")
+    if len(assigned_types) < 2:
+        raise AssertionError("Random-per-object mode did not vary the assigned motion presets")
+    print(f"[OK] Surface Spawn: {len(spawned)} separate animated objects, {len(node_group_ids)} unique node groups, types={sorted(assigned_types)}")
     print("VIN Motion Lab runtime smoke test passed.")
 
 
