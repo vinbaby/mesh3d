@@ -19,8 +19,12 @@ def _motion_addon_source() -> str:
 def test_standalone_motion_addon_is_valid_and_independent() -> None:
     source = _motion_addon_source()
     assert '"name": "VIN Motion Lab"' in source
-    assert 'bl_category = "VIN Motion"' in source
+    assert 'bl_category = "VIN Animate"' in source
     assert "class VINMOTION_OT_build_animation" in source
+    assert '("DRIFT", "3D Drift"' in source
+    assert '("RADIAL", "Radial Pulse"' in source
+    assert 'elif animation_type == "DRIFT"' in source
+    assert 'elif animation_type == "RADIAL"' in source
     assert "class VINMOTION_OT_reset_motion" in source
     assert "animation_phase_spread: FloatProperty" in source
     assert "for index, obj in enumerate(targets)" in source
