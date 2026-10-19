@@ -1,4 +1,4 @@
-# VIN Material Lab — Standalone Blender Add-on v0.1.0
+# VIN Material Lab — Standalone Blender Add-on v0.2.0
 
 VIN Material Lab is a separate Blender add-on for **shader materials, color palettes, and procedural surface textures**. It does not modify the shape generator or the motion tools. It supports Blender 3.6+ and uses Blender's built-in Shader Editor nodes; no external services or libraries are required.
 
@@ -30,15 +30,30 @@ Applying a material replaces the selected objects' active material-slot assignme
 - **Titanium Sunset** — cold metallic blue and orange highlights.
 - **Porcelain Champagne** — ivory ceramic with warm champagne metal.
 - **Void Ember** — black/graphite with ember-orange highlights.
+- **Earth & Natural** — wood, leather, clay, sand and natural pigments.
+- **Soft Pastel** — gentle colors for toys, characters, props and interiors.
+- **Ocean & Coast** — ocean blue, sea-glass turquoise, foam and warm sand.
+- **Forest & Moss** — greens, moss and natural amber.
+- **Candy Pop** — playful saturated colors for stylized assets.
+- **Clay / Terracotta** — warm clay, brick, fired ceramic and earthy orange.
 
 ## Surface finish presets
 
-- **Titanium** — machined metallic finish.
-- **Black Chrome** — very metallic and glossy.
-- **Ceramic / Porcelain** — low metallic, smooth surface.
-- **Carbon Composite** — semi-metallic dark composite.
-- **Alien Porous** — softer organic-looking surface.
-- **Energy Ceramic** — glossy finish for sci-fi energy parts.
+- **Titanium / Black Chrome / Carbon Composite** — metal and engineered surfaces.
+- **Ceramic / Porcelain / Energy Ceramic** — glazed, satin or glossy ceramic.
+- **Clear Glass** — high transmission and sharp reflections.
+- **Frosted Glass** — translucent rough glass with soft highlights.
+- **Clear Plastic** — tinted acrylic/polycarbonate with transmission and a little coat.
+- **Matte Plastic** — opaque, non-metallic plastic with broad highlights.
+- **Rubber** — very rough, low-reflection surface.
+- **Fabric / Cloth** — high roughness and a sheen response.
+- **Leather** — semi-matte hide with modest sheen.
+- **Wood** — non-metallic satin finish intended for wood-grain texture.
+- **Stone / Concrete** — rough mineral surface.
+- **Paper / Card** — dry matte paper, cardboard or cardstock.
+- **Alien Porous** — rough organic finish for experimental materials.
+
+Transparent finishes configure transmission and available viewport transparency properties. For physically convincing glass, use **Cycles** or configure the lighting/refraction in Eevee for your Blender version. The shader alone cannot create solid thickness, convincing refraction detail or a background to reflect.
 
 ## Texture node patterns
 
@@ -46,13 +61,18 @@ Applying a material replaces the selected objects' active material-slot assignme
 |---|---|
 | Clean Variation | Broad noise variation with restrained bump |
 | Brushed Metal | Directional Wave Texture lines with fine relief |
-| Noise / Color Ramp | Noise Texture → Color Ramp, with Bump |
-| Carbon Fiber | Crossed Wave Texture bands combined into a woven pattern |
-| Hex / Cell Pattern | Voronoi cell borders and relief |
-| Pitted / Porous | Mottled noise texture with relief |
-| Circuit Lines | Distorted Wave Texture tracks driven by Noise |
+| Noise / Color Ramp | Noise Texture to Color Ramp, with Bump |
+| Carbon Fiber | Crossed Wave bands combined into a woven pattern |
+| Hex / Cell Pattern | Voronoi cell boundaries and surface relief |
+| Pitted / Porous | Mottled noise plus Voronoi crater-like relief |
+| Circuit Lines | Distorted directional tracks driven by Noise |
+| Fabric Weave | Two crossed Wave fields for fibre crossings |
+| Wood Grain | Distorted Wave bands guided by Noise for flowing grain |
+| Speckled Stone | Voronoi mineral flecks blended with broad Noise |
+| Micro Scratches | Fine directional lines broken up by Noise |
+| Water Droplets | Voronoi cell field for droplet-like relief |
 
-All patterns use native shader nodes and remain editable. Texture Scale changes the size of the pattern; Texture Detail affects noise detail; Ramp Contrast changes how abruptly colors transition; Accent Strength controls how far the accent stop moves into the ramp; Bump parameters control the perceived relief. Glow Strength is optional and defaults to 0.
+All patterns use native shader nodes and remain editable. Texture Scale changes pattern size; Texture Detail controls noise detail where applicable; Ramp Contrast changes how abruptly colors transition; Accent Strength affects the accent portion of the ramp; Bump Strength and Distance control perceived relief. Glow Strength is optional and defaults to 0.
 
 ### Suggested starting combinations
 
@@ -60,7 +80,13 @@ All patterns use native shader nodes and remain editable. Texture Scale changes 
 - **White ceramic alien sculpture:** Porcelain Champagne + Ceramic / Porcelain + Pitted / Porous.
 - **Neon geometric sculpture:** Neon Prism + Energy Ceramic + Noise / Color Ramp; set Glow Strength between 0.2 and 1.0.
 - **Black and gold lattice:** Monochrome + Gold + Titanium + Hex / Cell Pattern.
-- **Carbon sci-fi shell:** Void Ember + Carbon Composite + Carbon Fiber.
+- **Clear glass object:** Ocean & Coast + Clear Glass + Clean Variation; use a lit environment and inspect in Cycles.
+- **Soft toy or stylized prop:** Soft Pastel + Matte Plastic + Clean Variation.
+- **Cloth or fabric accessory:** Earth & Natural + Fabric / Cloth + Fabric Weave.
+- **Wooden prop or furniture:** Earth & Natural + Wood + Wood Grain.
+- **Stone, concrete or rock:** Forest & Moss or Earth & Natural + Stone + Speckled Stone.
+- **Leather gear:** Earth & Natural + Leather + Micro Scratches.
+- **Water droplets on a surface:** Ocean & Coast + Clear Glass or Clear Plastic + Water Droplets.
 
 ## Notes
 
