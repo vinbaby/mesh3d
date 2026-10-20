@@ -1,4 +1,4 @@
-# VIN Motion Lab — Standalone Blender Add-on v0.8.1
+# VIN Motion Lab — Standalone Blender Add-on v0.9.0
 
 VIN Motion Lab is a separate add-on from VIN Procedural Lab. It owns animation and Geometry Nodes workflows only; it does not replace, patch, or alter the procedural shape generator.
 
@@ -98,3 +98,37 @@ Select one or more Alien Lattice layers or other meshes, choose **Lattice Pulse*
 ### Sidebar tabs v0.8.1
 
 The Viewport Sidebar uses VIN Animate (Geometry Nodes motion), VIN Actions (real transform keyframes), VIN Scatter, VIN Spawn and VIN Crawl. Each Object Motion Action creates one independent Action per selected object.
+
+
+## Surface Spawn: Scale Grow, Rise / Emerge, Rise + Twist
+
+Open the separate **VIN Spawn** tab. Select a mesh surface, set a separate Spawn Source Collection, choose Spawn Count and timing, then choose Growth Mode:
+
+- **Scale Grow** keeps the original behavior: each spawned object grows from a near-zero scale.
+- **Rise / Emerge** grows while rising from beneath the surface along each sampled face normal.
+- **Rise + Twist** adds an individual twist during the rise.
+- **Rise Height** is multiplied by the spawned object's size; **Entry Twist** sets the amount of rotation around the surface normal.
+- Spawn Stagger spreads starts across time, while Growth Frames controls the rise duration.
+
+Every spawned piece is a separate object with its own node animation modifier and its own transform Action. The source collection and target surface stay separate.
+
+## VIN Force Lab — one-shot keyframed force actions
+
+Open the **VIN Force** sidebar tab, select the objects to affect, optionally assign a Force Center, choose a Force Mode and click **Apply Force to Selected**. Each affected object gets its own non-looping transform Action. The existing Geometry Nodes modifier remains in place; only the transform curves in the assigned Action are replaced.
+
+- **Impulse Burst** — kicks objects outward with a damped rebound.
+- **Radial Push / Pull** — move objects away from or toward the force center.
+- **Directional Blast** — move along Force Direction; the default is upward along Z.
+- **Shockwave Ring** — stagger an outward pulse by distance from the center.
+- **Vortex** — orbit around the center and the chosen force axis, with a small drift along the axis.
+- **Turbulence** — a seeded, damped shake that returns near the starting position.
+
+**Strength** controls displacement, **Radius** limits which selected objects are affected, **Falloff** weakens the force toward the radius boundary, **Duration Frames** sets the one-shot timing, **Start Stagger** spreads the start times, and **Force Seed** changes per-object variation. The center defaults to the average location of selected objects if no Force Center is assigned. Objects outside Radius are skipped.
+
+Important: these Force Lab modes are keyframed transform effects, not a rigid-body physics simulation. They are meant for predictable motion-graphics shots where each object's timing can be edited independently. True collision-driven physics is a separate simulation workflow.
+
+
+
+### Version 0.9.0
+
+Adds Scale Grow, Rise / Emerge and Rise + Twist choices to Surface Spawn and a separate VIN Force tab with seven keyframed force actions. The force actions are independently keyed per selected object and do not claim to be rigid-body simulations.
