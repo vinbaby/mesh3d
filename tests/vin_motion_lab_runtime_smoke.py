@@ -194,6 +194,47 @@ def main() -> None:
                 raise AssertionError("Magnet Repel action failed")
         print(f"[OK] Object Motion Action {mode}: {len(action_targets)} independent Actions")
 
+    # VIN Force Lab: one-shot, independent transform-keyframed responses.
+    settings.force_anchor = None
+    settings.force_strength = 1.25
+    settings.force_radius = 10.0
+    settings.force_falloff = 1.35
+    settings.force_duration = 32
+    settings.force_stagger = 4
+    settings.force_seed = 173
+    settings.force_direction = (0.0, 0.0, 1.0)
+    settings.force_vortex_turns = 1.25
+    for mode in ("IMPULSE_BURST", "RADIAL_PUSH", "RADIAL_PULL", "DIRECTIONAL_BLAST", "SHOCKWAVE_RING", "VORTEX", "TURBULENCE"):
+        settings.force_mode = mode
+        for obj in bpy.context.selected_objects:
+            obj.select_set(False)
+        for obj in action_targets:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = action_targets[0]
+        force_result = bpy.ops.vinmotion.apply_force_action()
+        if "FINISHED" not in force_result:
+            raise AssertionError(f"Force action failed for {mode}: {force_result}")
+        force_action_ids = set()
+        for obj in action_targets:
+            action = obj.animation_data.action if obj.animation_data else None
+            if action is None:
+                raise AssertionError(f"{mode}: {obj.name} has no force Action")
+            force_action_ids.add(action.as_pointer())
+            loc_curves = [fc for fc in action.fcurves if fc.data_path == "location"]
+            rot_curves = [fc for fc in action.fcurves if fc.data_path == "rotation_euler"]
+            scale_curves = [fc for fc in action.fcurves if fc.data_path == "scale"]
+            if len(loc_curves) != 3 or len(rot_curves) != 3 or len(scale_curves) != 3:
+                raise AssertionError(f"{mode}: missing separate transform channels")
+            if any(len(fc.keyframe_points) < 4 for fc in loc_curves):
+                raise AssertionError(f"{mode}: expected multiple one-shot transform keys")
+            if any(any(mod.type == "CYCLES" for mod in fc.modifiers) for fc in loc_curves):
+                raise AssertionError(f"{mode}: force response should be one-shot, not looping")
+            if obj.get("vinmotion_force_mode") != mode:
+                raise AssertionError(f"{mode}: force metadata is missing")
+        if len(force_action_ids) != len(action_targets):
+            raise AssertionError(f"{mode}: selected objects share Actions")
+        print(f"[OK] VIN Force {mode}: {len(action_targets)} separate one-shot Actions")
+
     # Create an independent source collection with two object choices and an unrelated Plane.
     source_collection = bpy.data.collections.new("VIN Motion Test Sources")
     bpy.context.scene.collection.children.link(source_collection)
@@ -278,6 +319,9 @@ def main() -> None:
     settings.spawn_start_frame = 1
     settings.spawn_stagger_frames = 30
     settings.spawn_growth_frames = 10
+    settings.spawn_growth_mode = "RISE_TWIST"
+    settings.spawn_growth_height = 1.25
+    settings.spawn_growth_twist = 0.45
 
     for obj in bpy.context.selected_objects:
         obj.select_set(False)
@@ -302,11 +346,20 @@ def main() -> None:
         assigned_types.add(obj.get("vinmotion_animation_type"))
         if obj.animation_data is None or obj.animation_data.action is None:
             raise AssertionError(f"{obj.name} has no growth keyframes")
+        action = obj.animation_data.action
+        location_curves = [fc for fc in action.fcurves if fc.data_path == "location"]
+        rotation_curves = [fc for fc in action.fcurves if fc.data_path == "rotation_quaternion"]
+        if obj.get("vinmotion_spawn_growth_mode") != "RISE_TWIST":
+            raise AssertionError(f"{obj.name} has incorrect growth mode metadata")
+        if len(location_curves) != 3 or len(rotation_curves) != 4:
+            raise AssertionError(f"{obj.name} is missing rise/twist keyframe channels")
+        if any(len(fc.keyframe_points) < 3 for fc in location_curves):
+            raise AssertionError(f"{obj.name} has too few rise keyframes")
     if len(node_group_ids) != len(spawned):
         raise AssertionError("Spawned objects are sharing animation node groups instead of receiving individual graphs")
     if len(assigned_types) < 2:
         raise AssertionError("Random-per-object mode did not vary the assigned motion presets")
-    print(f"[OK] Surface Spawn: {len(spawned)} separate animated objects, {len(node_group_ids)} unique node groups, types={sorted(assigned_types)}")
+    print(f"[OK] Surface Spawn / Rise + Twist: {len(spawned)} separate animated objects, {len(node_group_ids)} unique node groups, types={sorted(assigned_types)}")
 
     # Surface Crawl: each target gets its own loop of projected location keys on a target mesh.
     crawl_surface_mesh = bpy.data.meshes.new("VIN Motion Crawl Surface Mesh")
