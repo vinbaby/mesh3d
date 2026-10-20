@@ -1,10 +1,10 @@
 bl_info = {
     "name": "VIN Motion Lab",
     "author": "VIN Studio",
-    "version": (0, 8, 1),
+    "version": (0, 9, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Motion",
-    "description": "Standalone Geometry Nodes animation and noise-mask scatter tools",
+    "description": "Independent object motion, surface spawning, keyframed force actions and Geometry Nodes tools",
     "category": "Animation",
 }
 
@@ -17,6 +17,7 @@ from bpy.props import (
     BoolProperty,
     EnumProperty,
     FloatProperty,
+    FloatVectorProperty,
     IntProperty,
     PointerProperty,
 )
@@ -782,6 +783,47 @@ def _insert_growth_keys(obj, final_scale, start_frame, growth_frames, rng):
                 key.handle_right_type = "AUTO_CLAMPED"
 
 
+def _insert_surface_emerge_keys(obj, final_location, normal, start_frame, growth_frames, rise_height, twist_angle, rng, twist_enabled):
+    """Keyframe an object emerging along the surface normal while retaining separate geometry."""
+    normal = Vector(normal).normalized()
+    final_location = Vector(final_location)
+    final_rotation = obj.rotation_quaternion.copy() if obj.rotation_mode == "QUATERNION" else obj.rotation_euler.to_quaternion()
+    object_size = max(0.1, max(obj.dimensions))
+    height = max(0.0, float(rise_height)) * object_size
+    frame_count = max(1, int(growth_frames))
+    steps = [
+        (0.00, -1.00, -1.00),
+        (0.52, -0.16, 0.72),
+        (0.78, 0.055, -0.22),
+        (1.00, 0.00, 0.00),
+    ]
+    for t, height_factor, twist_factor in steps:
+        obj.location = final_location + normal * (height * height_factor)
+        if twist_enabled:
+            twist = Quaternion(normal, float(twist_angle) * twist_factor)
+            obj.rotation_mode = "QUATERNION"
+            obj.rotation_quaternion = twist @ final_rotation
+        else:
+            obj.rotation_mode = "QUATERNION"
+            obj.rotation_quaternion = final_rotation
+        frame = int(start_frame + round(frame_count * t))
+        obj.keyframe_insert(data_path="location", frame=frame, group="VIN Surface Emerge")
+        if twist_enabled:
+            obj.keyframe_insert(data_path="rotation_quaternion", frame=frame, group="VIN Surface Emerge")
+    obj.location = final_location
+    obj.rotation_mode = "QUATERNION"
+    obj.rotation_quaternion = final_rotation
+    action = obj.animation_data.action if obj.animation_data else None
+    if action:
+        for curve in action.fcurves:
+            if curve.data_path not in {"location", "rotation_quaternion", "scale"}:
+                continue
+            for key in curve.keyframe_points:
+                key.interpolation = "BEZIER"
+                key.handle_left_type = "AUTO_CLAMPED"
+                key.handle_right_type = "AUTO_CLAMPED"
+
+
 def _build_surface_bvh(surface, depsgraph):
     """Build a world-space acceleration tree for projecting crawl paths onto a mesh surface."""
     evaluated = surface.evaluated_get(depsgraph)
@@ -925,6 +967,41 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
         default="PULL",
     )
 
+    force_mode: EnumProperty(
+        name="Force Mode",
+        description="Keyframed transform response; this is not a rigid-body simulation",
+        items=[
+            ("IMPULSE_BURST", "Impulse Burst", "Kick objects outward with a damped rebound"),
+            ("RADIAL_PUSH", "Radial Push", "Push objects outward from a center"),
+            ("RADIAL_PULL", "Radial Pull", "Pull objects inward toward a center"),
+            ("DIRECTIONAL_BLAST", "Directional Blast", "Push objects along a chosen vector"),
+            ("SHOCKWAVE_RING", "Shockwave Ring", "A distance-staggered outward pulse"),
+            ("VORTEX", "Vortex", "Spiral objects around the center and force axis"),
+            ("TURBULENCE", "Turbulence", "Jitter objects in a seeded, damped burst"),
+        ],
+        default="IMPULSE_BURST",
+    )
+    force_strength: FloatProperty(name="Strength", default=2.5, min=0.01, max=100.0, precision=2)
+    force_radius: FloatProperty(name="Radius", default=10.0, min=0.1, max=1000.0, precision=2)
+    force_falloff: FloatProperty(name="Falloff", default=1.4, min=0.1, max=6.0, precision=2)
+    force_duration: IntProperty(name="Duration Frames", default=42, min=8, max=2000)
+    force_stagger: IntProperty(name="Start Stagger", default=18, min=0, max=10000)
+    force_seed: IntProperty(name="Force Seed", default=173, min=0, max=9999999)
+    force_anchor: PointerProperty(
+        name="Force Center",
+        description="Optional center object; leave empty to use the selected objects' average position",
+        type=bpy.types.Object,
+    )
+    force_direction: FloatVectorProperty(
+        name="Force Direction",
+        description="Direction for Directional Blast and vortex axis",
+        size=3,
+        default=(0.0, 0.0, 1.0),
+        min=-1.0,
+        max=1.0,
+    )
+    force_vortex_turns: FloatProperty(name="Vortex Turns", default=1.5, min=0.1, max=8.0, precision=2)
+
     scatter_collection: PointerProperty(
         name="Source Collection",
         description="Separate source objects to instance over the active Plane",
@@ -955,6 +1032,17 @@ class VINMOTION_Settings(bpy.types.PropertyGroup):
     spawn_start_frame: IntProperty(name="First Spawn Frame", default=1, min=1, max=100000)
     spawn_stagger_frames: IntProperty(name="Spawn Stagger", default=72, min=0, max=100000)
     spawn_growth_frames: IntProperty(name="Growth Frames", default=16, min=1, max=1000)
+    spawn_growth_mode: EnumProperty(
+        name="Growth Mode",
+        items=[
+            ("SCALE", "Scale Grow", "Grow from near-zero scale at the spawn point"),
+            ("RISE", "Rise / Emerge", "Rise from below the surface along its normal"),
+            ("RISE_TWIST", "Rise + Twist", "Rise from the surface while twisting into place"),
+        ],
+        default="SCALE",
+    )
+    spawn_growth_height: FloatProperty(name="Rise Height", default=1.25, min=0.0, max=20.0, precision=2)
+    spawn_growth_twist: FloatProperty(name="Entry Twist", default=0.45, min=0.0, max=6.283, precision=2)
 
     crawl_surface: PointerProperty(name="Crawl Surface", description="Mesh surface that selected objects will follow", type=bpy.types.Object)
     crawl_seed: IntProperty(name="Crawl Seed", default=93, min=0, max=9999999)
@@ -1192,6 +1280,20 @@ class VINMOTION_OT_surface_spawn(bpy.types.Operator):
                 if settings.spawn_stagger_frames:
                     start_frame += rng.randint(0, settings.spawn_stagger_frames)
                 _insert_growth_keys(spawn_obj, final_scale, start_frame, settings.spawn_growth_frames, rng)
+                if settings.spawn_growth_mode in {"RISE", "RISE_TWIST"}:
+                    final_location = point + normal * settings.spawn_surface_offset
+                    _insert_surface_emerge_keys(
+                        spawn_obj,
+                        final_location,
+                        normal,
+                        start_frame,
+                        settings.spawn_growth_frames,
+                        settings.spawn_growth_height,
+                        settings.spawn_growth_twist,
+                        rng,
+                        settings.spawn_growth_mode == "RISE_TWIST",
+                    )
+                spawn_obj["vinmotion_spawn_growth_mode"] = settings.spawn_growth_mode
                 spawn_obj["vinmotion_spawn_index"] = index + 1
                 spawn_obj["vinmotion_animation_type"] = animation_type
                 spawn_obj["vinmotion_speed"] = speed_value
@@ -1722,6 +1824,211 @@ class VINMOTION_OT_apply_object_motion(bpy.types.Operator):
         return {"FINISHED"}
 
 
+
+
+class VINMOTION_OT_apply_force_action(bpy.types.Operator):
+    bl_idname = "vinmotion.apply_force_action"
+    bl_label = "Apply Force to Selected"
+    bl_description = "Create a one-shot, independently keyframed force response for each selected object"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinmotion_settings
+        supported = {"MESH", "CURVE", "FONT", "SURFACE"}
+        targets = [
+            obj for obj in context.selected_objects
+            if obj.type in supported and obj != settings.force_anchor
+        ]
+        if not targets:
+            self.report({"ERROR"}, "Select one or more objects to receive force")
+            return {"CANCELLED"}
+        if any(obj.parent is not None for obj in targets):
+            self.report({"ERROR"}, "Force actions need unparented objects so transform keys move predictably")
+            return {"CANCELLED"}
+
+        if settings.force_anchor is not None:
+            center = settings.force_anchor.matrix_world.translation.copy()
+        else:
+            center = sum((obj.matrix_world.translation for obj in targets), Vector((0.0, 0.0, 0.0))) / len(targets)
+
+        radius = max(0.1, float(settings.force_radius))
+        strength = float(settings.force_strength)
+        falloff_power = max(0.1, float(settings.force_falloff))
+        duration = max(8, int(settings.force_duration))
+        start_base = max(1, int(context.scene.frame_current))
+        axis = Vector(settings.force_direction)
+        if axis.length < 1e-6:
+            axis = Vector((0.0, 0.0, 1.0))
+        axis.normalize()
+        rng = random.Random(settings.force_seed)
+        prepared = 0
+        skipped = 0
+        failures = []
+
+        for index, obj in enumerate(targets):
+            try:
+                base_location = obj.location.copy()
+                base_rotation = Vector(tuple(obj.rotation_euler))
+                base_scale = obj.scale.copy()
+                radial = obj.matrix_world.translation - center
+                distance = radial.length
+                if distance > radius:
+                    skipped += 1
+                    continue
+                falloff = max(0.0, 1.0 - distance / radius) ** falloff_power
+                if falloff <= 1e-5:
+                    skipped += 1
+                    continue
+
+                object_rng = random.Random(rng.randint(0, 2**31 - 1))
+                if radial.length < 1e-5:
+                    radial = Vector((
+                        object_rng.uniform(-1.0, 1.0),
+                        object_rng.uniform(-1.0, 1.0),
+                        object_rng.uniform(-1.0, 1.0),
+                    ))
+                    if radial.length < 1e-5:
+                        radial = Vector((0.0, 0.0, 1.0))
+                radial.normalize()
+                disp = Vector((0.0, 0.0, 0.0))
+                vortex_axis = axis.copy()
+                loop = False
+                interpolation = "BEZIER"
+                mode = settings.force_mode
+                object_duration = duration
+                distance_delay = int(round(settings.force_stagger * min(1.0, distance / radius)))
+                start_frame = start_base + (distance_delay if mode == "SHOCKWAVE_RING" else object_rng.randint(0, settings.force_stagger))
+
+                if mode in {"IMPULSE_BURST", "RADIAL_PUSH", "SHOCKWAVE_RING"}:
+                    disp = radial * strength * falloff
+                    if mode == "IMPULSE_BURST":
+                        key_factors = [(0.0, 0.0), (0.12, 1.18), (0.34, 0.78), (0.58, 1.06), (1.0, 1.0)]
+                    elif mode == "SHOCKWAVE_RING":
+                        key_factors = [(0.0, 0.0), (0.18, 1.0), (0.42, 0.76), (0.70, 1.04), (1.0, 1.0)]
+                    else:
+                        key_factors = [(0.0, 0.0), (0.22, 1.0), (0.48, 1.06), (1.0, 1.0)]
+                    rotation_impulse = Vector((
+                        object_rng.uniform(-0.18, 0.18),
+                        object_rng.uniform(-0.18, 0.18),
+                        object_rng.uniform(-0.28, 0.28),
+                    )) * falloff
+                    for t, factor in key_factors:
+                        loc = base_location + disp * factor
+                        rot = base_rotation + rotation_impulse * math.sin(math.pi * min(1.0, t))
+                        _insert_object_motion_key(obj, start_frame + round(t * object_duration), loc, rot, base_scale, {"location", "rotation_euler", "scale"})
+
+                elif mode == "RADIAL_PULL":
+                    disp = -radial * min(strength * falloff, max(0.0, distance * 0.82))
+                    for t, factor in [(0.0, 0.0), (0.20, 1.0), (0.48, 0.88), (0.72, 1.04), (1.0, 1.0)]:
+                        rot = base_rotation + Vector((0.05, -0.04, 0.08)) * math.sin(math.pi * t) * falloff
+                        _insert_object_motion_key(obj, start_frame + round(t * object_duration), base_location + disp * factor, rot, base_scale, {"location", "rotation_euler", "scale"})
+
+                elif mode == "DIRECTIONAL_BLAST":
+                    disp = axis * strength * falloff
+                    random_spin = Vector((
+                        object_rng.uniform(-0.16, 0.16),
+                        object_rng.uniform(-0.16, 0.16),
+                        object_rng.uniform(-0.16, 0.16),
+                    )) * falloff
+                    for t, factor in [(0.0, 0.0), (0.18, 1.0), (0.44, 0.80), (0.70, 1.04), (1.0, 1.0)]:
+                        rot = base_rotation + random_spin * math.sin(math.pi * t)
+                        _insert_object_motion_key(obj, start_frame + round(t * object_duration), base_location + disp * factor, rot, base_scale, {"location", "rotation_euler", "scale"})
+
+                elif mode == "VORTEX":
+                    planar = radial - vortex_axis * radial.dot(vortex_axis)
+                    if planar.length < 1e-5:
+                        planar = vortex_axis.orthogonal()
+                    original_parallel = radial.dot(vortex_axis)
+                    planar_radius = planar.length
+                    turns = float(settings.force_vortex_turns)
+                    for t in (0.0, 0.20, 0.40, 0.60, 0.80, 1.0):
+                        rotation = Quaternion(vortex_axis, math.tau * turns * t)
+                        spun = rotation @ planar
+                        vertical_drift = vortex_axis * (strength * falloff * 0.22 * t)
+                        loc = center + spun + vortex_axis * original_parallel + vertical_drift
+                        angle = math.tau * turns * t
+                        rot = base_rotation + vortex_axis * (angle * 0.20)
+                        _insert_object_motion_key(obj, start_frame + round(t * object_duration), loc, rot, base_scale, {"location", "rotation_euler", "scale"})
+
+                elif mode == "TURBULENCE":
+                    final_offset = Vector((0.0, 0.0, 0.0))
+                    samples = 10
+                    points = []
+                    for sample in range(samples + 1):
+                        t = sample / samples
+                        if sample in {0, samples}:
+                            offset = Vector((0.0, 0.0, 0.0))
+                            spin = Vector((0.0, 0.0, 0.0))
+                        else:
+                            offset = Vector((
+                                object_rng.uniform(-1.0, 1.0),
+                                object_rng.uniform(-1.0, 1.0),
+                                object_rng.uniform(-1.0, 1.0),
+                            )) * strength * falloff * math.sin(math.pi * t)
+                            spin = Vector((
+                                object_rng.uniform(-0.40, 0.40),
+                                object_rng.uniform(-0.40, 0.40),
+                                object_rng.uniform(-0.40, 0.40),
+                            )) * falloff * math.sin(math.pi * t)
+                        points.append((t, offset, spin))
+                    for t, offset, spin in points:
+                        _insert_object_motion_key(obj, start_frame + round(t * object_duration), base_location + offset, base_rotation + spin, base_scale, {"location", "rotation_euler", "scale"})
+                else:
+                    raise ValueError(f"Unsupported force mode: {mode}")
+
+                _finish_object_motion_action(obj, interpolation=interpolation, loop=loop)
+                obj["vinmotion_force_mode"] = mode
+                obj["vinmotion_force_seed"] = settings.force_seed + index
+                obj["vinmotion_force_center"] = tuple(center)
+                obj["vinmotion_force_radius"] = radius
+                obj["vinmotion_force_strength"] = strength
+                obj["vinmotion_force_start"] = start_frame
+                obj["vinmotion_force_duration"] = object_duration
+                prepared += 1
+            except Exception as exc:
+                failures.append(f"{obj.name}: {exc}")
+
+        if failures:
+            self.report({"ERROR"}, f"Force action applied to {prepared}/{len(targets)} objects; failed: {failures[0]}")
+            return {"CANCELLED"}
+        if prepared == 0:
+            self.report({"ERROR"}, f"No selected objects were within the {radius:g} unit force radius")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Applied {mode.replace('_', ' ').title()} to {prepared} object(s); skipped {skipped} outside radius")
+        return {"FINISHED"}
+
+
+class VINMOTION_PT_force(bpy.types.Panel):
+    bl_label = "Force Lab · Keyframed"
+    bl_idname = "VINMOTION_PT_force"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VIN Force"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.vinmotion_settings
+        box = layout.box()
+        box.label(text="One-shot Force Actions", icon="FORCE_FORCE")
+        box.label(text="Independent transform keys; not a rigid-body simulation.")
+        box.prop(settings, "force_mode")
+        box.prop(settings, "force_strength")
+        box.prop(settings, "force_radius")
+        box.prop(settings, "force_falloff")
+        box.prop(settings, "force_duration")
+        box.prop(settings, "force_stagger")
+        box.prop(settings, "force_seed")
+        box.prop(settings, "force_anchor")
+        if settings.force_mode in {"DIRECTIONAL_BLAST", "VORTEX"}:
+            box.prop(settings, "force_direction")
+        if settings.force_mode == "VORTEX":
+            box.prop(settings, "force_vortex_turns")
+        box.operator("vinmotion.apply_force_action", text="Apply Force to Selected", icon="FORCE_FORCE")
+        layout.separator()
+        layout.label(text="Selected objects keep their own Actions.")
+        layout.label(text="Use VIN Actions for looping motions; VIN Force is a one-shot reaction.")
+
+
 class VINMOTION_PT_actions(bpy.types.Panel):
     bl_label = "Object Motion Actions"
     bl_idname = "VINMOTION_PT_actions"
@@ -1818,6 +2125,11 @@ class VINMOTION_PT_spawn(bpy.types.Panel):
         row.prop(settings, "spawn_start_frame")
         row.prop(settings, "spawn_stagger_frames")
         box.prop(settings, "spawn_growth_frames")
+        box.prop(settings, "spawn_growth_mode")
+        if settings.spawn_growth_mode in {"RISE", "RISE_TWIST"}:
+            box.prop(settings, "spawn_growth_height")
+        if settings.spawn_growth_mode == "RISE_TWIST":
+            box.prop(settings, "spawn_growth_twist")
         box.operator("vinmotion.surface_spawn", text="Spawn Separate Objects", icon="DUPLICATE")
 
 
@@ -1851,6 +2163,8 @@ CLASSES = (
     VINMOTION_OT_build_animation,
     VINMOTION_OT_reset_motion,
     VINMOTION_OT_apply_object_motion,
+    VINMOTION_OT_apply_force_action,
+    VINMOTION_PT_force,
     VINMOTION_OT_surface_spawn,
     VINMOTION_OT_surface_crawl,
     VINMOTION_OT_build_scatter,
