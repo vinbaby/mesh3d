@@ -98,6 +98,19 @@ def test_standalone_motion_addon_is_valid_and_independent() -> None:
     assert 'bl_category = "VIN Animate"' in source
     assert "class VINMOTION_OT_build_animation" in source
     assert "class VINMOTION_OT_apply_object_motion" in source
+    assert "class VINMOTION_OT_apply_force_action" in source
+    assert "class VINMOTION_PT_force" in source
+    assert 'bl_category = "VIN Force"' in source
+    assert '("IMPULSE_BURST", "Impulse Burst"' in source
+    assert '("RADIAL_PUSH", "Radial Push"' in source
+    assert '("RADIAL_PULL", "Radial Pull"' in source
+    assert '("DIRECTIONAL_BLAST", "Directional Blast"' in source
+    assert '("SHOCKWAVE_RING", "Shockwave Ring"' in source
+    assert '("VORTEX", "Vortex"' in source
+    assert '("TURBULENCE", "Turbulence"' in source
+    assert "def _insert_surface_emerge_keys" in source
+    assert '("RISE", "Rise / Emerge"' in source
+    assert '("RISE_TWIST", "Rise + Twist"' in source
     assert "class VINMOTION_PT_actions" in source
     assert 'bl_category = "VIN Actions"' in source
     assert "OBJECT_MOTION_LABELS" in source
