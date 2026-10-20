@@ -1867,6 +1867,8 @@ class VINMOTION_OT_apply_force_action(bpy.types.Operator):
 
         for index, obj in enumerate(targets):
             try:
+                # Give this force pass its own clean transform Action; preserve non-transform channels.
+                _prepare_object_motion_action(obj)
                 base_location = obj.location.copy()
                 base_rotation = Vector(tuple(obj.rotation_euler))
                 base_scale = obj.scale.copy()
