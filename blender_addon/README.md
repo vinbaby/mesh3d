@@ -51,4 +51,4 @@ Color palettes, material finishes and shader texture nodes live in the independe
 
 ## Separate general-purpose materials and textures
 
-VIN Material Lab v0.2.0 is a standalone add-on for material work: 12 color palettes, 16 surface finishes (including glass, clear/matte plastic, rubber, fabric, leather, wood, stone and paper), and 12 procedural texture node patterns. It remains separate from the shape generator. See [VIN_MATERIAL_LAB_README.md](VIN_MATERIAL_LAB_README.md) and [vin_material_lab.py](vin_material_lab.py).
+VIN Material Lab v0.3.0 is a standalone add-on for material work: 12 color palettes, 16 surface finishes (including glass, clear/matte plastic, rubber, fabric, leather, wood, stone and paper), and 12 procedural texture node patterns. It remains separate from the shape generator. See [VIN_MATERIAL_LAB_README.md](VIN_MATERIAL_LAB_README.md) and [vin_material_lab.py](vin_material_lab.py).
