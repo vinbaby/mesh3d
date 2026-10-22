@@ -1,7 +1,7 @@
 bl_info = {
     "name": "VIN Path Poly Generator",
     "author": "VIN Studio",
-    "version": (0, 1, 0),
+    "version": (0, 1, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Lab > Path Poly",
     "description": "Generate editable randomized low-poly solids from a closed Path curve",
@@ -23,47 +23,60 @@ from bpy.props import (
 
 
 def _curve_outline(curve_obj, resolution=16):
-    """Return a closed 2D outline in world XY, sampled from the active curve spline."""
+    """Sample the curve's actual spline control path, not its beveled display mesh."""
     if curve_obj is None or curve_obj.type != 'CURVE':
         raise ValueError("Select a Curve object first.")
     if not curve_obj.data.splines:
         raise ValueError("The selected Curve has no spline.")
 
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    evaluated = curve_obj.evaluated_get(depsgraph)
-    mesh = evaluated.to_mesh()
-    try:
-        world = evaluated.matrix_world
-        # Evaluated curve mesh is used to sample Bezier/NURBS splines smoothly.
-        coords = [world @ v.co for v in mesh.vertices]
-    finally:
-        evaluated.to_mesh_clear()
+    from mathutils.geometry import interpolate_bezier
 
-    if len(coords) < 3:
-        # Fallback for a simple Poly spline when curve evaluation gives no vertices.
-        spline = curve_obj.data.splines[0]
-        if spline.type != 'POLY':
-            raise ValueError("Could not sample this curve. Try converting it to a Poly curve.")
-        coords = [curve_obj.matrix_world @ p.co.xyz for p in spline.points]
+    spline = curve_obj.data.splines[0]
+    coords_local = []
 
-    # The tool intentionally uses the XY projection so a front-view drawing becomes a solid.
+    if spline.type == 'BEZIER':
+        bez = spline.bezier_points
+        count = len(bez)
+        if count < 3:
+            raise ValueError("The Path needs at least three Bezier points.")
+        segment_count = count if spline.use_cyclic_u else count - 1
+        for i in range(segment_count):
+            a = bez[i]
+            b = bez[(i + 1) % count]
+            samples = interpolate_bezier(
+                a.co, a.handle_right, b.handle_left, b.co,
+                max(2, resolution) + 1,
+            )
+            # Avoid duplicate segment endpoints; the next segment supplies them.
+            coords_local.extend(samples[:-1])
+        if not spline.use_cyclic_u:
+            coords_local.append(bez[-1].co.copy())
+    else:
+        # Poly uses its drawn points directly. NURBS uses its control points as a
+        # predictable outline rather than sampling the curve's bevelled render mesh.
+        coords_local = [p.co.xyz.copy() for p in spline.points]
+
+    world = curve_obj.matrix_world
     points = []
-    for p in coords:
+    for co in coords_local:
+        p = world @ Vector(co)
         q = (float(p.x), float(p.y))
-        if not points or (Vector(q) - Vector(points[-1])).length > 1e-5:
+        if not points or math.hypot(q[0] - points[-1][0], q[1] - points[-1][1]) > 1e-5:
             points.append(q)
-    if len(points) > 2 and (Vector(points[0]) - Vector(points[-1])).length < 1e-5:
+
+    if len(points) > 2 and math.hypot(points[0][0] - points[-1][0],
+                                     points[0][1] - points[-1][1]) < 1e-5:
         points.pop()
     if len(points) < 3:
         raise ValueError("The Path needs at least three distinct points.")
-    # Reject a degenerate outline.
-    area = sum(points[i][0] * points[(i + 1) % len(points)][1] -
-               points[(i + 1) % len(points)][0] * points[i][1]
-               for i in range(len(points))) * 0.5
+    area = sum(
+        points[i][0] * points[(i + 1) % len(points)][1]
+        - points[(i + 1) % len(points)][0] * points[i][1]
+        for i in range(len(points))
+    ) * 0.5
     if abs(area) < 1e-6:
         raise ValueError("The Path has almost zero area. Draw it in Front View (XY plane).")
     return points
-
 
 def _point_on_segment(p, a, b, eps=1e-4):
     px, py = p
