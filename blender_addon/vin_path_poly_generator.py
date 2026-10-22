@@ -103,6 +103,9 @@ def _build_poly_solid(outline, settings, seed):
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
+        bm.verts.index_update()
+        bm.edges.index_update()
+        bm.faces.index_update()
 
         # Keep the drawn silhouette fixed; perturb only interior points.
         span_x = max(x for x, y in outline) - min(x for x, y in outline)
@@ -163,7 +166,8 @@ def _make_generated(context, settings, replace_existing=False):
         mod = obj.modifiers.new("Soft Poly Edges", 'BEVEL')
         mod.width = settings.bevel
         mod.segments = 1
-        mod.affect = 'EDGES' if hasattr(mod, "affect") else None
+        if hasattr(mod, "affect"):
+            mod.affect = 'EDGES'
     if settings.weighted_normals:
         try:
             mod = obj.modifiers.new("Weighted Normals", 'WEIGHTED_NORMAL')
