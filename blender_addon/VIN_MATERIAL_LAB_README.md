@@ -1,4 +1,4 @@
-# VIN Material Lab — Standalone Blender Add-on v0.2.0
+# VIN Material Lab — Standalone Blender Add-on v0.3.0
 
 VIN Material Lab is a separate Blender add-on for **shader materials, color palettes, and procedural surface textures**. It does not modify the shape generator or the motion tools. It supports Blender 3.6+ and uses Blender's built-in Shader Editor nodes; no external services or libraries are required.
 
@@ -13,12 +13,15 @@ Install it alongside VIN Procedural Lab and VIN Motion Lab. Each add-on has its 
 
 ## Use
 
-1. Select one or more mesh, curve, font, or surface objects.
-2. Choose a **Color Palette**, **Surface Finish**, and **Texture Pattern**.
-3. Tune Seed, Texture Scale, Texture Detail, Ramp Contrast, Accent Strength, Bump Strength, Bump Distance, and optional Glow Strength.
-4. Click **Apply to Selected**. The add-on creates a separate material and editable shader-node graph for each selected object.
-5. Click **Create Nodes** to create a standalone material datablock without assigning it to an object.
-6. Open the **Shader Editor** and inspect the VINMAT nodes to edit the graph manually.
+1. Choose a **Color Palette**, **Surface Finish**, and **Texture Pattern**.
+2. Tune Seed, Texture Scale, Texture Detail, Ramp Contrast, Accent Strength, Bump Strength, Bump Distance, and optional Glow Strength.
+3. Click **Create Material** to create a reusable material datablock and editable shader-node graph.
+4. Click **Preview Sphere** to create or update the dedicated preview sphere with the most recently generated material. Switch the viewport to **Material Preview** to inspect it.
+5. Select one or more mesh, curve, font, or surface objects and click **Apply Last Material** to share the same material across them.
+6. Use **Generate + Apply Unique** when each selected object should get its own independent shader material.
+7. Open the **Shader Editor** and inspect or edit the VINMAT nodes manually.
+
+Applying a shared material replaces selected objects' active material-slot assignments with that material. The preview sphere is a separate object named **VINMAT Preview Sphere** and is not merged with your target model.
 
 Applying a material replaces the selected objects' active material-slot assignments with the new material. Old material datablocks remain in the .blend unless the user removes them. Mesh data is copied before material assignment if it is shared between objects.
 
