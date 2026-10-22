@@ -1,10 +1,10 @@
 bl_info = {
     "name": "VIN Material Lab",
     "author": "VIN / OpenAI",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > VIN Material",
-    "description": "Standalone shader-node builder for curated sci-fi colors and surface textures",
+    "description": "Procedural material studio with preview, reusable materials and shader controls",
     "category": "Material",
 }
 
@@ -530,6 +530,7 @@ class VINMAT_Settings(bpy.types.PropertyGroup):
     bump_strength: FloatProperty(name="Bump Strength", default=0.18, min=0.0, max=1.0, precision=2)
     bump_distance: FloatProperty(name="Bump Distance", default=0.06, min=0.001, max=1.0, precision=3)
     glow_strength: FloatProperty(name="Glow Strength", default=0.0, min=0.0, max=20.0, precision=2)
+    last_material: PointerProperty(name="Last Generated Material", type=bpy.types.Material)
 
 
 class VINMAT_OT_create_material(bpy.types.Operator):
@@ -545,7 +546,8 @@ class VINMAT_OT_create_material(bpy.types.Operator):
         except Exception as exc:
             self.report({"ERROR"}, f"Material node creation failed: {exc}")
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Created {material.name} with {len(material.node_tree.nodes)} nodes")
+        settings.last_material = material
+        self.report({"INFO"}, f"Created {material.name} with {len(material.node_tree.nodes)} nodes. Use Apply Last Material or Preview Sphere.")
         return {"FINISHED"}
 
 
@@ -583,6 +585,71 @@ class VINMAT_OT_apply_selected(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class VINMAT_OT_apply_last_material(bpy.types.Operator):
+    bl_idname = "vinmat.apply_last_material"
+    bl_label = "Apply Last Material"
+    bl_description = "Apply the most recently created VIN material to all selected geometry objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        material = context.scene.vinmat_settings.last_material
+        if material is None or material.name not in bpy.data.materials:
+            self.report({"ERROR"}, "Create a material first")
+            return {"CANCELLED"}
+        targets = [o for o in context.selected_objects if o.type in {"MESH", "CURVE", "FONT", "SURFACE"}]
+        if not targets:
+            self.report({"ERROR"}, "Select at least one mesh/curve object in Object Mode")
+            return {"CANCELLED"}
+        for obj in targets:
+            if hasattr(obj.data, "materials"):
+                obj.data.materials.clear()
+                obj.data.materials.append(material)
+                obj.color = material.diffuse_color
+        self.report({"INFO"}, f"Applied shared material to {len(targets)} object(s)")
+        return {"FINISHED"}
+
+
+class VINMAT_OT_preview_sphere(bpy.types.Operator):
+    bl_idname = "vinmat.preview_sphere"
+    bl_label = "Create / Update Preview Sphere"
+    bl_description = "Create a dedicated preview sphere and assign the latest material"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.vinmat_settings
+        material = settings.last_material
+        if material is None or material.name not in bpy.data.materials:
+            try:
+                material = _make_material(settings, f"VIN Material · {settings.palette.title().replace('_', ' ')}", 0)
+                settings.last_material = material
+            except Exception as exc:
+                self.report({"ERROR"}, f"Could not create preview material: {exc}")
+                return {"CANCELLED"}
+        obj = bpy.data.objects.get("VINMAT Preview Sphere")
+        if obj is None or obj.type != "MESH":
+            mesh = bpy.data.meshes.new("VINMAT Preview Sphere Mesh")
+            obj = bpy.data.objects.new("VINMAT Preview Sphere", mesh)
+            context.scene.collection.objects.link(obj)
+            # Preview is placed beside the current selection rather than replacing it.
+            if context.active_object:
+                obj.location = context.active_object.location + __import__('mathutils').Vector((3.0, 0.0, 0.0))
+            # Build sphere mesh without context-sensitive operators.
+            import bmesh
+            bm = bmesh.new()
+            bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=24, radius=1.0)
+            bm.to_mesh(mesh)
+            bm.free()
+            for poly in mesh.polygons:
+                poly.use_smooth = True
+        if hasattr(obj.data, "materials"):
+            obj.data.materials.clear()
+            obj.data.materials.append(material)
+        obj.color = material.diffuse_color
+        # Avoid changing the user's selection or active mode.
+        self.report({"INFO"}, "Preview sphere updated. Switch viewport to Material Preview to inspect it.")
+        return {"FINISHED"}
+
+
 class VINMAT_PT_main(bpy.types.Panel):
     bl_label = "VIN Material Lab"
     bl_idname = "VINMAT_PT_main"
@@ -616,17 +683,29 @@ class VINMAT_PT_main(bpy.types.Panel):
         box.prop(settings, "bump_distance")
         box.prop(settings, "glow_strength")
         row = layout.row(align=True)
-        row.operator("vinmat.apply_selected", text="Apply to Selected", icon="MATERIAL")
-        row.operator("vinmat.create_material", text="Create Nodes", icon="NODETREE")
+        row.operator("vinmat.create_material", text="Create Material", icon="NODETREE")
+        row.operator("vinmat.preview_sphere", text="Preview Sphere", icon="SHADING_RENDERED")
+        row = layout.row(align=True)
+        row.operator("vinmat.apply_last_material", text="Apply Last Material", icon="MATERIAL")
+        row.operator("vinmat.apply_selected", text="Generate + Apply Unique", icon="BRUSH_MATERIAL")
+        if settings.last_material and settings.last_material.name in bpy.data.materials:
+            box = layout.box()
+            box.label(text="Current Material", icon="CHECKMARK")
+            box.label(text=settings.last_material.name)
+            box.label(text=f"{len(settings.last_material.node_tree.nodes)} shader nodes")
         layout.separator()
-        layout.label(text="Each object gets its own material/node tree.")
-        layout.label(text="Use the Shader Editor to inspect or edit the generated nodes.")
+        layout.label(text="Create Material makes a reusable datablock.")
+        layout.label(text="Apply Last Material shares it across selected objects.")
+        layout.label(text="Preview Sphere lets you inspect the surface quickly.")
+        layout.label(text="Use Material Preview mode; inspect nodes in Shader Editor.")
 
 
 CLASSES = (
     VINMAT_Settings,
     VINMAT_OT_create_material,
     VINMAT_OT_apply_selected,
+    VINMAT_OT_apply_last_material,
+    VINMAT_OT_preview_sphere,
     VINMAT_PT_main,
 )
 
